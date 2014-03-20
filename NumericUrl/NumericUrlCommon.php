@@ -182,7 +182,7 @@ class NumericUrlCommon {
 		$title = $context->getTitle();
  
     // skip if this is our own special page
-    if ( $title->isSpecialPage( self::SPECIAL_PAGE_TITLE ) ) {
+    if ( $title->isSpecial( self::SPECIAL_PAGE_TITLE ) ) {
       self::_debugLog( 20, __METHOD__ . ': not displayed for our own pages' );
       return;
     }

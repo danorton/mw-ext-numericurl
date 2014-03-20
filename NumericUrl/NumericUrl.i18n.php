@@ -46,9 +46,9 @@ $messages['en'] = array(
 'numericurl-toolbox-text'   => 'Numeric URL',
 
 'numericurl-nosuchpage'     => 'No such numeric URL',
-'numericurl-nosuchpagetext' => '<strong>The requested page does not exist.</strong>',
+'numericurl-nosuchpagetext' => '<strong>The requested numeric URL page does not exist.</strong>',
 
-'numericurl-unknownquerypage'     => 'Unrecognized request',
+'numericurl-unknownquerypage'     => 'Unrecognized numeric URL request',
 'numericurl-unknownquerypagetext' => '<strong>This page does not recognize the given request parameters.</strong>',
 
 'numericurl-toolform'         => 'Numeric URL tool',

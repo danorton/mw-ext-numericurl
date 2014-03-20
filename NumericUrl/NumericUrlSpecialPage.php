@@ -102,9 +102,6 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     $mp = "{$this->_mp}-toolform";
     $fields = array();
     
-    if ( !$this->mTarget ) {
-      $this->_buildTarget();
-    }
     $target = $this->mTarget;
     $targetPrefixHtml = '';
     
@@ -261,14 +258,22 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
     $query = array();
  
-    // If it's an old revision, we have to path through index.php
-    if ( $this->mOldId ) {
+    // If it's an old revision or a page ID, we have to path through index.php
+    if ( ( $this->mCurId ) || ( $this->mOldId ) ) {
       global $wgScript;
       $path = $wgScript;
-      $query[] = "oldid={$this->mOldId}";
-    } else {
+      if ( $this->mOldId ) {
+        $query[] = "oldid={$this->mOldId}";
+      } else {
+        $query[] = "curid={$this->mCurId}";
+      }
+    } else if ( $this->mTitle ) {
       global $wgArticlePath;
       $path = preg_replace( '/^(.*)$/', $wgArticlePath, $this->mTitle );
+    }
+    if ( !isset( $path ) ) {
+      // The lacks proper parameters to build the target
+      return;
     }
  
     // add the action
@@ -294,16 +299,48 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   }
 
   /** */
-  private function _isValidQuery() {
+  private static function _parseUrl( $url ) {
+    $urlParts = parse_url( $url );
+    if ( !( $urlParts && !isset( $urlParts['scheme'] ) ) ) {
+      if ( substr( $url, 0, 2 ) === '//' ) {
+        $urlParts = parse_url( WebRequest::detectProtocol() . ":{$url}" );
+      }
+      if ( !( $urlParts && $urlParts['scheme'] ) ) {
+        return false;
+      }
+      unset( $urlParts['scheme'] );
+    }
+    if ( !( isset( $urlParts['host'] ) && isset( $urlParts['path'] ) ) ) {
+      return false;
+    }
+    return $urlParts;
+  }
+ 
+  /** */
+  private function _isValidToolPageQuery() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
+    if ( !$this->mTarget ) {
+      $this->_buildTarget();
+    }
+ 
+    // validate the target URL
+    $urlParts = self::_parseUrl( $this->mTarget );
+    if ( !$urlParts ) {
+      NumericUrlCommon::_debugLog( 10,
+        sprintf('%s(): Invalid target URL: <%s>', __METHOD__, $this->mTarget )
+      );
+      return false;
+    }
+ 
+    return true;
   }
 
   /** */
 	private function _toolPage() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
  
-    if ( !$this->_isValidQuery() ) {
-      return _badQueryPage() ;
+    if ( !$this->_isValidToolPageQuery() ) {
+      return $this->_unknownQueryPage() ;
     }
  
     $this->_showToolForm = true;
@@ -335,12 +372,12 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	}
   
   /** */
-	private function _badQueryPage() {
+	private function _unknownQueryPage() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
 
 		$this->_prepareErrorPage()->showErrorPage(
-      "{$this->_mp}-badquerypage",
-      "{$this->_mp}-badquerypagetext"
+      "{$this->_mp}-unknownquerypage",
+      "{$this->_mp}-unknownquerypagetext"
     );
 	}
   
