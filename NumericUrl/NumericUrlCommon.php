@@ -339,10 +339,11 @@ class NumericUrlCommon {
 			$titleText = $wgCanonicalNamespaceNames[NS_SPECIAL] . ':' .
 				self::$_specialPageTitle->mUrlform;
 
-			self::$_path = preg_replace( '/^(.*)$/', $wgArticlePath,
-				$wgCanonicalNamespaceNames[NS_SPECIAL] . ':' .  self::$_specialPageTitle->mUrlform
-
-			);
+      self::$_path = str_replace(
+        '$1',
+        $wgCanonicalNamespaceNames[NS_SPECIAL] . ':' .  self::$_specialPageTitle->mUrlform,
+        $wgArticlePath
+      ); 
 			self::$_debugLogGroup = 'extension_' . self::EXTENSION_NAME;
       
       global $wgServer;

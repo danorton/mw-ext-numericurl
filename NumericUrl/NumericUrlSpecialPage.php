@@ -38,16 +38,10 @@ if ( !defined( 'MW_EXT_NUMERICURL_NAME' ) ) {
 class NumericUrlSpecialPage extends FormSpecialPage {
 
   /** */
-  public $mTitle;
+  public $mQuery;
   
   /** */
-  public $mCurId;
-  
-  /** */
-  public $mOldId;
-  
-  /** */
-  public $mAction;
+  public $mRevision;
 
   /** */
   public $mTarget;
@@ -72,12 +66,12 @@ class NumericUrlSpecialPage extends FormSpecialPage {
       sprintf('%s(): query=%s', __METHOD__, $query )
     );
     parse_str( $query, $args );
-    foreach ( array( 'mTitle', 'mCurId', 'mOldId', 'mAction' ) as $mProp ) {
-      $prop = strtolower( substr( $mProp, 1 ) );
+    $this->mQuery = array();
+    foreach ( array( 'title', 'curid', 'oldid', 'action', 'pageid' ) as $prop ) {
       if ( isset( $args[$prop] ) ) {
-        $this->{$mProp} = $args[$prop];
+        $this->mQuery[$prop] = $args[$prop];
         NumericUrlCommon::_debugLog( 20,
-          sprintf('%s(): %s=%s', __METHOD__, $prop, $this->{$mProp} )
+          sprintf('%s(): %s=%s', __METHOD__, $prop, $this->mQuery[$prop] )
         );
       }
     }
@@ -112,10 +106,9 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     }
  
     if ( $this->mTitle ) {
-      $title = Title::newFromText( $this->mTitle );
-      $htmlTitle = htmlspecialchars( $title->getPrefixedText() );
+      $htmlTitle = htmlspecialchars( $this->mTitle->getPrefixedText() );
       // only hyperlink the title if this is for the latest revision of the title
-      if ( !( $this->mCurId || $this->mOldId ) ) {
+      if ( !( isset( $this->mQuery['curid'] ) || $this->mRevision ) ) {
         $htmlTitle = Html::rawElement( 'a', array( 'href' => $target ), $htmlTitle );
       }
       $fields['target-title'] = array(
@@ -126,10 +119,9 @@ class NumericUrlSpecialPage extends FormSpecialPage {
         'default' => $htmlTitle,
       );
 
-      if ( $this->mOldId ) {
+      if ( $this->mRevision ) {
         $context = $this->getContext();
-        $revision = Revision::newFromTitle( $title, $this->mOldId );
-        $timestamp = $context->getLanguage()->userTimeAndDate( $revision->getTimestamp(), $context->getUser() );
+        $timestamp = $context->getLanguage()->userTimeAndDate( $this->mRevision->getTimestamp(), $context->getUser() );
         $htmlTimestamp = Html::rawElement( 'a', array( 'href' => $target ), $timestamp );
         $fields['oldid'] = array(
           'type' => 'info',
@@ -137,11 +129,11 @@ class NumericUrlSpecialPage extends FormSpecialPage {
           'raw' => true,
           'default' => $htmlTimestamp,
         );
-      } elseif ( $this->mCurId ) {
+      } elseif ( isset( $this->mQuery['curid'] ) ) {
         $fields['curid'] = array(
           'type' => 'info',
           'label-message' => "$mp-curid",
-          'default' => $this->mCurId,
+          'default' => $this->mQuery['curid'],
         );
       }
     }
@@ -161,24 +153,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
           ),  
     );
     
-    /* ///
-    $scope = array(
-      'local'   => "$mp-local",
-      'global'  => "$mp-global",
-    );
-    $fields['scope'] = array(
-      'type' => 'select',
-      'label-message' => "$mp-scope",
-      'options' => array(),
-      'default' => current( array_keys( $scope ) ),
-    );
-    // Store the scope options with i18n text
-    foreach( $scope as $k => $v ) {
-      $v = $this->msg( $v )->text();
-      $fields['scope']['options'][$v] = $k;
-    }
-    / *///
- 
+    // display scheme selection if our host isn't scheme-specific
     if ( NumericUrlCommon::$mBaseScheme === NumericUrlCommon::URL_SCHEME_FOLLOW ) {
       $scheme = array(
         NumericUrlCommon::URL_SCHEME_HTTPS  => "$mp-https",
@@ -252,33 +227,56 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   protected function alterForm( HTMLForm $form ) {
     $form->setSubmitTextMsg( $this->getMessagePrefix() . '-submit' );
   }
+  
+  private function _getTitle() {
+    if ( ( !$this->mTitleObject ) && $this->mQuery['title'] ) {
+      $this->mTitleObject = Title::newFromText( $this->mQuery['title'] );
+    }
+    return $this->mTitleObject;
+  }
 
   /** */
   private function _buildTarget() {
 
-    $query = array();
- 
-    // If it's an old revision or a page ID, we have to path through index.php
-    if ( ( $this->mCurId ) || ( $this->mOldId ) ) {
-      global $wgScript;
-      $path = $wgScript;
-      if ( $this->mOldId ) {
-        $query[] = "oldid={$this->mOldId}";
-      } else {
-        $query[] = "curid={$this->mCurId}";
-      }
-    } else if ( $this->mTitle ) {
-      global $wgArticlePath;
-      $path = preg_replace( '/^(.*)$/', $wgArticlePath, $this->mTitle );
+    // We require the title text, at the very least
+    // (This avoids problems with stale links if the title changes.)
+    if ( !$this->mQuery['title'] ) {
+      return;
     }
-    if ( !isset( $path ) ) {
-      // The lacks proper parameters to build the target
+    
+    // Fetch the title object for the given title text
+    $this->mTitle = Title::newFromText( $this->mQuery['title'] );
+    if ( !$this->mTitle ) {
       return;
     }
  
+    $query = array();
+ 
+    // If it's an old revision or a page ID, we have to path through index.php
+    if ( isset( $this->mQuery['curid'] ) || isset( $this->mQuery['oldid'] ) ) {
+      if ( isset( $this->mQuery['oldid'] ) ) {
+        unset( $this->mQuery['curid'] );
+        $this->mRevision = Revision::newFromTitle( $title, $this->mQuery['oldid'] );
+        $query[] = "oldid={$this->mQuery['oldid']}";
+      } else {
+        // curid must match the title's article ID
+		    if ( $this->mQuery['curid'] != $this->mTitle->getArticleID() ) {
+          return;
+        }
+        $query[] = "curid={$this->mQuery['curid']}";
+      }
+      global $wgScript;
+      $path = $wgScript;
+    } else {
+      // This is the URL for the latest revision of the article of the specified title
+      $this->mRevision = null;
+      global $wgArticlePath;
+      $path = str_replace( '$1', $this->mQuery['title'], $wgArticlePath );
+    }
+ 
     // add the action
-    if ( $this->mAction ) {
-      $query[] = "action={$this->mAction}";
+    if ( isset( $this->mQuery['action'] ) ) {
+      $query[] = "action={$this->mQuery['action']}";
     }
     if ( count($query) ) {
       $path .= '?' . implode( '&', $query );
@@ -289,7 +287,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
  
     // set the redirection target
     $this->mTarget = NumericUrlCommon::$mBaseUrl . $path ;
- 
+    
   }
   
   /** */
@@ -319,6 +317,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   /** */
   private function _isValidToolPageQuery() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
+ 
     if ( !$this->mTarget ) {
       $this->_buildTarget();
     }
