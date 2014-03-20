@@ -54,19 +54,19 @@ if ( !isset( $wgNumericUrl ) ) {
   $wgNumericUrl = array();
 }
 
-if ( !isset($wgNumericUrl['template'] ) ) {
+if ( !isset( $wgNumericUrl['template'] ) ) {
 	$wgNumericUrl['template'] = null;
 }
 
-if ( !isset($wgNumericUrl['api'] ) ) {
+if ( !isset( $wgNumericUrl['api'] ) ) {
   $wgNumericUrl['api'] = array();
 }
 
-if ( !isset($wgNumericUrl['api']['paramName'] ) ) {
+if ( !isset( $wgNumericUrl['api']['paramName'] ) ) {
   $wgNumericUrl['api']['paramName'] = MW_EXT_NUMERICURL_API_PARAM_NAME;
 }
 
-if ( !isset($wgNumericUrl['api']['mid'] ) ) {
+if ( !isset( $wgNumericUrl['api']['mid'] ) ) {
   $wgNumericUrl['api']['mid'] = MW_EXT_NUMERICURL_API_MID;
 }
 
@@ -114,4 +114,9 @@ $wgAPIModules[$wgNumericUrl['api']['paramName']] = MW_EXT_NUMERICURL_API_CLASS;
 $wgAutoloadClasses[MW_EXT_NUMERICURL_API_CLASS] =
 	 __DIR__ . '/' . MW_EXT_NUMERICURL_API_CLASS . '.php';
 
+// resources
+$wgResourceModules['ext.numericUrl.toolpage'] = array(
+	'styles' => MW_EXT_NUMERICURL_NAME . '.css',
+	'localBasePath' => __DIR__,
+);
 /** @}*/

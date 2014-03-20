@@ -41,11 +41,15 @@ $specialPageAliases = array() ;
  */
 $messages['en'] = array(
 'numericurl'                => 'Numeric URLs',
+
 'numericurl-toolbox-title'  => 'Generate a numeric URL to this page',
 'numericurl-toolbox-text'   => 'Numeric URL',
 
 'numericurl-nosuchpage'     => 'No such numeric URL',
-'numericurl-nosuchpagetext' => '<strong>You have requested a page that does not exist.</strong>',
+'numericurl-nosuchpagetext' => '<strong>The requested page does not exist.</strong>',
+
+'numericurl-unknownquerypage'     => 'Unrecognized request',
+'numericurl-unknownquerypagetext' => '<strong>This page does not recognize the given request parameters.</strong>',
 
 'numericurl-toolform'         => 'Numeric URL tool',
 'numericurl-toolform-summary' => 'This is the Numeric URL tool page summary.',
@@ -54,17 +58,18 @@ $messages['en'] = array(
 'numericurl-toolform-local'   => 'Local',
 'numericurl-toolform-global'  => 'Global',
 'numericurl-toolform-scheme'  => 'Scheme',
-'numericurl-toolform-https'   => 'https://',
-'numericurl-toolform-http'    => 'http://',
-'numericurl-toolform-any-scheme'=> '//',
+'numericurl-toolform-https'   => 'https://',  # DO NOT TRANSLATE
+'numericurl-toolform-http'    => 'http://',   # DO NOT TRANSLATE
+'numericurl-toolform-any-scheme'=> '//',      # DO NOT TRANSLATE
 'numericurl-toolform-shared'  => 'Shared',
 'numericurl-toolform-revision'=> 'Specific revision',
-'numericurl-toolform-revid'   => 'Revision ID',
-'numericurl-toolform-pageid'  => 'Page ID',
-'numericurl-toolform-target'  => 'Original URL',
-'numericurl-toolform-submit'  => 'Make shorter',
-'numericurl-toolform-expiry'  => 'Expiration',
-'numericurl-toolform-shorter'  => 'Shorter URL',
+'numericurl-toolform-oldid'   => 'Revision:',
+'numericurl-toolform-curid'   => 'Page ID:',
+'numericurl-toolform-target-title' => 'Page title:',
+'numericurl-toolform-target'  => 'Long URL:',
+'numericurl-toolform-submit'  => 'Make numeric',
+'numericurl-toolform-expiry'  => 'Expiration:',
+'numericurl-toolform-numeric' => 'Numeric URL:',
 ) ;
 $specialPageAliases['en'] = array(
 MW_EXT_NUMERICURL_NAME => array( 'NumericUrl' ),

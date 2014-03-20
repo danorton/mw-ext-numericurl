@@ -52,6 +52,15 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   /** */
   public $mTarget;
 
+  /** */
+  public $mNumericUrl;
+
+  /** */
+  public $mNumericUrlExpiry;
+
+  /** */
+  public $mScheme;
+
 	/** For parameters and semantics, see FormSpecialPage::__construct(). */
 	public function __construct() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
@@ -62,7 +71,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     NumericUrlCommon::_debugLog( 20,
       sprintf('%s(): query=%s', __METHOD__, $query )
     );
-    parse_str( $query, $args ) ;
+    parse_str( $query, $args );
     foreach ( array( 'mTitle', 'mCurId', 'mOldId', 'mAction' ) as $mProp ) {
       $prop = strtolower( substr( $mProp, 1 ) );
       if ( isset( $args[$prop] ) ) {
@@ -94,14 +103,68 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     $fields = array();
     
     if ( !$this->mTarget ) {
-      $this->_buildTarget() ;
+      $this->_buildTarget();
     }
+    $target = $this->mTarget;
+    $targetPrefixHtml = '';
     
-    $fields['target'] = array(
-      'type' => 'url',
-      'label-message' => "$mp-target",
-    );
+    // remove our own base URL for brevity
+    if (NumericUrlCommon::$mBaseUrl === substr( $target, 0, strlen( NumericUrlCommon::$mBaseUrl ) ) ) {
+      $target = substr( $target, strlen( NumericUrlCommon::$mBaseUrl ) );
+      $targetPrefixHtml = '&hellip;';
+    }
+ 
+    if ( $this->mTitle ) {
+      $title = Title::newFromText( $this->mTitle );
+      $htmlTitle = htmlspecialchars( $title->getPrefixedText() );
+      // only hyperlink the title if this is for the latest revision of the title
+      if ( !( $this->mCurId || $this->mOldId ) ) {
+        $htmlTitle = Html::rawElement( 'a', array( 'href' => $target ), $htmlTitle );
+      }
+      $fields['target-title'] = array(
+        'type' => 'info',
+        'cssclass' => "$mp-target-title",
+        'label-message' => "$mp-target-title",
+        'raw' => true,
+        'default' => $htmlTitle,
+      );
 
+      if ( $this->mOldId ) {
+        $context = $this->getContext();
+        $revision = Revision::newFromTitle( $title, $this->mOldId );
+        $timestamp = $context->getLanguage()->userTimeAndDate( $revision->getTimestamp(), $context->getUser() );
+        $htmlTimestamp = Html::rawElement( 'a', array( 'href' => $target ), $timestamp );
+        $fields['oldid'] = array(
+          'type' => 'info',
+          'label-message' => "$mp-oldid",
+          'raw' => true,
+          'default' => $htmlTimestamp,
+        );
+      } elseif ( $this->mCurId ) {
+        $fields['curid'] = array(
+          'type' => 'info',
+          'label-message' => "$mp-curid",
+          'default' => $this->mCurId,
+        );
+      }
+    }
+
+    $fields['target'] = array(
+      'type' => 'info',
+      'cssclass' => "$mp-target",
+      'label-message' => "$mp-target",
+      'raw' => true,
+      'default' =>
+        Html::rawElement( 'a',
+          array(
+            'href' => $target,
+            'title' => $this->mTarget,
+          ),
+          $targetPrefixHtml . htmlspecialchars( $target )
+          ),  
+    );
+    
+    /* ///
     $scope = array(
       'local'   => "$mp-local",
       'global'  => "$mp-global",
@@ -114,77 +177,46 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     );
     // Store the scope options with i18n text
     foreach( $scope as $k => $v ) {
-      $v = $this->msg( $v )->text() ;
+      $v = $this->msg( $v )->text();
       $fields['scope']['options'][$v] = $k;
     }
+    / *///
  
-    $scheme = array(
-      'https' => "$mp-https",
-      'http'  => "$mp-http",
-      'any'   => "$mp-any-scheme",
-    );
-    $fields['scheme'] = array(
-      'type' => 'select',
-      'label-message' => "$mp-scheme",
-      'options' => array(),
-      'default' => current( array_keys( $scheme ) ),
-    );
-    // Store the scheme options with i18n text
-    foreach( $scheme as $k => $v ) {
-      $v = $this->msg( $v )->text() ;
-      $fields['scheme']['options'][$v] = $k;
+    if ( NumericUrlCommon::$mBaseScheme === NumericUrlCommon::URL_SCHEME_FOLLOW ) {
+      $scheme = array(
+        NumericUrlCommon::URL_SCHEME_HTTPS  => "$mp-https",
+        NumericUrlCommon::URL_SCHEME_HTTP   => "$mp-http",
+        NumericUrlCommon::URL_SCHEME_FOLLOW => "$mp-any-scheme",
+      );
+      $fields['scheme'] = array(
+        'type' => 'select',
+        'label-message' => "$mp-scheme",
+        'options' => array(),
+        'default' => $this->mScheme,
+      );
+      // Store the scheme options with i18n text
+      foreach( $scheme as $k => $v ) {
+        $v = $this->msg( $v )->text();
+        $fields['scheme']['options'][$v] = $k;
+      }
     }
  
-    $fields['shared'] = array(
-      'type' => 'toggle',
-      'label-message' => "$mp-shared",
-      'default' => true,
-    );
- 
-    $fields['revision'] = array(
-      'type' => 'toggle',
-      'label-message' => "$mp-revision",
-      'default' => !empty( $this->mOldId )
-    );
- 
-    $fields['revid'] = array(
-      'type' => 'int',
-      'label-message' => "$mp-revid",
-      'default' => $this->mOldId,
-    );
+    if ( 0 && $this->mNumericUrl ) {
+      $fields['numeric'] = array(
+        'type' => 'info',
+        'label-message' => "$mp-numeric",
+        'readonly' => true,
+        'default' => 'default?',
+      );
 
-    $fields['pageid'] = array(
-      'type' => 'int',
-      'label-message' => "$mp-pageid",
-      'default' => $this->mCurId,
-    );
+      $fields['expiry'] = array(
+        'type' => 'info',
+        'cssclass' => 'mw-info-numeric-expiry',
+        'label-message' => "$mp-expiry",
+        'default' => strftime( '%Y-%m-%d %H:%M:%SZ', time() + 3600*24*7*13 ), // 91 days
+      );
+    }
 
-    $fields['expiry'] = array(
-      'type' => 'text',
-      'label-message' => "$mp-expiry",
-      'default' => strftime( '%Y-%m-%d %H:%M:%SZ', time() + 3600*24*7*13 ), // 91 days
-    );
-
-    $fields['shorter'] = array(
-      'type' => 'url',
-      'label-message' => "$mp-shorter",
-    );
-
-    if ( !empty( $this->mScope ) ) {
-      $fields['scope']['default'] = $this->mScope;
-    }
-    if ( !empty( $this->mScheme ) ) {
-      $fields['scheme']['default'] = $this->mScheme;
-    }
-    if ( !empty( $this->mTitle ) ) {
-      $fields['target']['default'] = $this->mTitle;
-      $fields['target']['readonly'] = true;
-    }
-    if ( 1 ) {
-      $fields['shorter']['default'] = mt_rand() . mt_rand() ;
-      $fields['shorter']['readonly'] = true;
-    }
- 
     return $fields;
   }
   
@@ -226,10 +258,32 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
   /** */
   private function _buildTarget() {
+
+    $query = array();
  
-    if ( $this->mScopeIsLocal ) {
-      $this->mServer = $wgServer ;
+    // If it's an old revision, we have to path through index.php
+    if ( $this->mOldId ) {
+      global $wgScript;
+      $path = $wgScript;
+      $query[] = "oldid={$this->mOldId}";
+    } else {
+      global $wgArticlePath;
+      $path = preg_replace( '/^(.*)$/', $wgArticlePath, $this->mTitle );
     }
+ 
+    // add the action
+    if ( $this->mAction ) {
+      $query[] = "action={$this->mAction}";
+    }
+    if ( count($query) ) {
+      $path .= '?' . implode( '&', $query );
+    }
+    
+    // set the scheme
+    $this->mScheme = NumericUrlCommon::$mBaseScheme;
+ 
+    // set the redirection target
+    $this->mTarget = NumericUrlCommon::$mBaseUrl . $path ;
  
   }
   
@@ -240,15 +294,26 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   }
 
   /** */
+  private function _isValidQuery() {
+    NumericUrlCommon::_debugLog( 20, __METHOD__ );
+  }
+
+  /** */
 	private function _toolPage() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
+ 
+    if ( !$this->_isValidQuery() ) {
+      return _badQueryPage() ;
+    }
+ 
     $this->_showToolForm = true;
-    
+ 
     $out = $this->getOutput();
 		$out->setArticleRelated( false ); // bugbug: set accordingly
 		$out->setRobotPolicy( 'noindex,nofollow' );
     
     $this->setHeaders();
+    $out->addModuleStyles('ext.numericUrl.toolpage');
     
     $this->outputHeader( "{$this->_mp}-toolform-summary" );
 
@@ -262,23 +327,53 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   /** */
 	private function _noSuchPage() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
+ 
+		$this->_prepareErrorPage()->showErrorPage(
+      "{$this->_mp}-nosuchpage",
+      "{$this->_mp}-nosuchpagetext"
+    );
+	}
+  
+  /** */
+	private function _badQueryPage() {
+    NumericUrlCommon::_debugLog( 20, __METHOD__ );
+
+		$this->_prepareErrorPage()->showErrorPage(
+      "{$this->_mp}-badquerypage",
+      "{$this->_mp}-badquerypagetext"
+    );
+	}
+  
+  /** */
+	private function _prepareErrorPage( $statusCode = 404 ) {
+    NumericUrlCommon::_debugLog( 20, __METHOD__ );
     $out = $this->getOutput();
 		$out->setArticleRelated( false );
 		$out->setRobotPolicy( 'noindex,nofollow' );
 
-		if ( $GLOBALS['wgSend404Code'] ) {
-			$out->setStatusCode( 404 );
+    global $wgSend404Code;
+		if ( ($statusCode != 404) || $wgSend404Code ) {
+			$out->setStatusCode( $statusCode );
 		}
-
-		$out->showErrorPage( "{$this->_mp}-nosuchpage", "{$this->_mp}-nosuchpagetext" );
+    
+    return $out;
 	}
+  
+  /**
+   * @static
+   */
+  /* ///
+  public static function _initStatic() {
+  }
+  / *///
 
   /** i18n message prefix */
   private $_mp;
 
   /** */
   private $_showToolForm;
-
+  
 }
+//NumericUrlSpecialPage::_initStatic();
 
 /** @}*/
