@@ -240,7 +240,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
     // We require the title text, at the very least
     // (This avoids problems with stale links if the title changes.)
-    if ( !$this->mQuery['title'] ) {
+    if ( !isset( $this->mQuery['title'] ) ) {
       return;
     }
     
