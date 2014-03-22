@@ -38,6 +38,9 @@ class NumericUrlCommon {
 	const EXTENSION_NAME = MW_EXT_NUMERICURL_NAME;
 
 	/** */
+	const EXTENSION_NAME_LC = MW_EXT_NUMERICURL_NAME_LC;
+
+	/** */
 	const SPECIAL_PAGE_TITLE = MW_EXT_NUMERICURL_NAME;
   
   /** */
@@ -49,9 +52,6 @@ class NumericUrlCommon {
   /** */
   const URL_SCHEME_FOLLOW = '//';
   
-  /** */
-  public static $mToolQueryParam = 'nuquery';
-
 	/** Extension configuration; from global $wgNumericUrl */
 	public static $mConfig;
 
@@ -70,14 +70,14 @@ class NumericUrlCommon {
     // 'info', 'purge', 'watch',
     );
 
-	/** If to display the toolbox link on specific revision pages. */
-	public static $mToolboxOnRevisions = true; //false;
-
 	/** If to display the toolbox link on specific page ID pages. */
 	public static $mToolboxOnPageId = true; // false;
 
 	/** */
 	public static $_debugLogLevel = 0;
+  
+  /** */
+  public static $userRightsNames;
 
 	/**
 	 * Disable the class constructor.
@@ -92,6 +92,52 @@ class NumericUrlCommon {
 			) );
 		}
 	}
+  
+
+	/** */
+  public static function isAllowed( $userRightsName, $user = null ) {
+    if ( $user === null ) {
+      if ( self::$_defaultUser === null ) {
+        self::$_defaultUser = RequestContext::getMain()->getUser();
+      }
+      $user = self::$_defaultUser;
+    }
+    if ( is_array( $userRightsName ) ) {
+      return self::_isAllowedAll( $userRightsName, $user );
+    }
+    if ( !isset( self::$userRightsNames[$userRightsName] ) ) {
+			trigger_error(
+				sprintf('%s: unrecognized user right queried: "%s"', __METHOD__, $userRightsName ),
+				E_USER_WARNING );
+      return false;
+    }
+    return $user->isAllowed( self::getFullUserRightsName( $userRightsName ) );
+  }
+ 
+	/** */
+  private static function _isAllowedAll( $userRightsNames, $user ) {
+    foreach( $userRightsNames as $userRightsName ) {
+      if ( !self::isAllowed( $userRightsName, $user ) ) {
+        return false;
+      }
+    }
+    return true;
+  }
+ 
+  /** */
+  public static function getFullUserRightsName( $userRightsName ) {
+    static $fullUserRightsNames = array();
+    if ( !isset( $fullUserRightsNames[$userRightsName] ) ) {
+      if ( !isset( self::$userRightsNames[$userRightsName] ) ) {
+        trigger_error(
+          sprintf('%s: unrecognized user rights name: "%s"', __METHOD__, $userRightsName),
+          E_USER_WARNING );
+        return null;
+      }
+      $fullUserRightsNames[$userRightsName] = self::EXTENSION_NAME_LC . "-$userRightsName";
+    }
+    return $fullUserRightsNames[$userRightsName];
+  }
 
 	/** */
 	public static function onWebRequestPathInfoRouter( $pathRouter ) {
@@ -148,22 +194,18 @@ class NumericUrlCommon {
   //*///
 
 	/**
-   * Display a link in the toolbox for certain pages
+   * Display a link to our basic creation tool in the toolbox for certain pages.
    */
 	public static function onSkinTemplateToolboxEnd( $tpl ) {
 		self::_debugLog( 20, __METHOD__ );
     
+    if ( !self::isAllowed('follow') ) {
+      return;
+    }
+    
 		$context = $tpl->getSkin()->getContext();
 
 		$action = Action::getActionName( $context );
-		self::_debugLog( 30,
-			sprintf( '%s(): tpl=%s; skin=%s; context=%s; action=%s', __METHOD__,
-				get_class( $tpl ),
-				get_class( $tpl->getSkin() ),
-				get_class( $context ),
-				$action
-			)
-		);
  
 		// skip this unless specifically configured for the current action
 		if ( !in_array( $action, self::$mToolboxActions ) ) {
@@ -202,10 +244,22 @@ class NumericUrlCommon {
 		// pass the current query parameters to the tool, if invoked
 		$subPath = array();
  
-		// pass the title
     $urlTitle = $title->getPrefixedUrl();
     if ( $urlTitle ) {
-      $subPath[] = 'title=' . $title->getPrefixedUrl();
+      // see if the configuration rules out this title
+      if ( self::$mConfig->reTitlesWithToolLink) {
+        if ( !preg_match( self::$mConfig->reTitlesWithToolLink, $urlTitle ) ) {
+          self::_debugLog( 20, __METHOD__ . ': did not match reTitlesWithToolLink' );
+          return;
+        }
+      }
+      if ( self::$mConfig->reTitlesWithoutToolLink ) {
+        if ( preg_match( self::$mConfig->reTitlesWithoutToolLink, $urlTitle ) ) {
+          self::_debugLog( 20, __METHOD__ . ': matched reTitlesWithoutToolLink' );
+          return;
+        }
+      }
+      $subPath[] = "title=$urlTitle";
       self::_debugLog( 30,
         sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $subPath ) )
       );
@@ -222,7 +276,7 @@ class NumericUrlCommon {
       $oldid = Article::newFromID( $articleId)->getOldID();
       if ( $oldid ) {
         // bail if we don't display the toolbox link for revision pages
-        if ( !self::$mToolboxOnRevisions ) {
+        if ( !self::$mConfig->revisionToolLink ) {
           self::_debugLog( 20, __METHOD__ . ': not configured for display on specific revisions' );
           return;
         }
@@ -236,7 +290,7 @@ class NumericUrlCommon {
         $curid = $context->getRequest()->getInt( 'curid' );
         if ( $curid ) {
           // bail if we don't display the toolbox link for current-revision page-ID pages
-          if ( !self::$mToolboxOnPageId ) {
+          if ( !self::$mConfig->pageIdToolLink ) {
             self::_debugLog( 20, __METHOD__ . ': not configured for display on page-ID pages' );
             return;
           }
@@ -262,7 +316,7 @@ class NumericUrlCommon {
         Html::Element( 'a',
           array(
             'href' => self::$_path . '?'
-              . self::$mToolQueryParam . '=' . rawurlencode(implode( '&', $subPath )),
+              . self::$mConfig->toolLinkQueryParam . '=' . rawurlencode(implode( '&', $subPath )),
             'title' => wfMessage( 'numericurl-toolbox-title' )->text(),
             ),
           wfMessage( 'numericurl-toolbox-text' )->text()
@@ -354,6 +408,9 @@ class NumericUrlCommon {
         self::$mBaseUrl = WebRequest::detectProtocol() . ':' . self::$mBaseUrl;
         self::$mBaseScheme = self::URL_SCHEME_FOLLOW;
       }
+      
+      // flip the user rights array for faster key access
+      self::$userRightsNames = array_flip( self::$_userRightsNamesFlipped );
  
 		}
 		else {
@@ -370,6 +427,20 @@ class NumericUrlCommon {
 	/** */
 	private static $_debugLogGroup;
 	
+  /** */
+  private static $_userRightsNamesFlipped = array(
+    'follow',
+    'create-basic',
+    'create-group',
+    'create-global',
+    'create-notrack',
+    'create-password',
+    'create-noexpire',
+  );
+  
+  /** */
+  private static $_defaultUser;
+
 	/** */
 	//const _URL_SCHEME_REGEX = '"^(([a-z][a-z.+-]{1,32}:)?//)?(.*)$"';
 

@@ -34,3 +34,7 @@
 .numericurl-toolform-target-title .mw-input {
   font-weight: bold;
 }
+
+.numericurl-toolform-unavailable .mw-input {
+  font-style: italic;
+}

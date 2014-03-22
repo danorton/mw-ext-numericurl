@@ -33,7 +33,7 @@ if ( !defined( 'MW_EXT_NUMERICURL_NAME' ) ) {
 }
 
 /**
- * This class provides the NumericUrl @b Special: page, which generates redirects.
+ * Pages for @b Special:NumericUrl, for managing numeric URL redirects.
  */
 class NumericUrlSpecialPage extends FormSpecialPage {
 
@@ -47,7 +47,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   public $mTarget;
 
   /** */
-  public $mNumericUrl;
+  public $mNumericUrlPath;
 
   /** */
   public $mNumericUrlExpiry;
@@ -61,13 +61,14 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		parent::__construct( NumericUrlCommon::SPECIAL_PAGE_TITLE );
     $this->_mp = parent::getMessagePrefix();
     $rq = $this->getRequest();
-    $query = rawurldecode( $rq->getVal( 'nuquery' ) );
+    
+    $query = rawurldecode( $rq->getVal( NumericUrlCommon::$mConfig->toolLinkQueryParam ) );
     NumericUrlCommon::_debugLog( 20,
       sprintf('%s(): query=%s', __METHOD__, $query )
     );
     parse_str( $query, $args );
     $this->mQuery = array();
-    foreach ( array( 'title', 'curid', 'oldid', 'action', 'pageid' ) as $prop ) {
+    foreach( array( 'title', 'curid', 'oldid', 'action', 'pageid' ) as $prop ) {
       if ( isset( $args[$prop] ) ) {
         $this->mQuery[$prop] = $args[$prop];
         NumericUrlCommon::_debugLog( 20,
@@ -83,15 +84,25 @@ class NumericUrlSpecialPage extends FormSpecialPage {
       sprintf('%s("%s")', __METHOD__, $subPage)
     );
     if ( $subPage == '' ) {
+      if ( !NumericUrlCommon::isAllowed( 'follow', $this->getContext()->getUser() ) ) {
+        throw new PermissionsError( NumericUrlCommon::getFullUserRightsName( 'follow' ) );
+      }
       $this->_toolPage();
 		} else {
       return $this->_noSuchPage();
 		}
 	}
-
+  
   /** For parameters and semantics, see FormSpecialPage::getFormFields(). */
   public function getFormFields() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
+ 
+    $context = $this->getContext();
+    $user = $context->getUser();
+    $hasCreateRights = NumericUrlCommon::isAllowed(
+      array( 'create-basic', 'follow' ),
+      $user );
+    $canCreate = $hasCreateRights && !$this->mNumericUrlPath;
  
     $mp = "{$this->_mp}-toolform";
     $fields = array();
@@ -108,7 +119,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     if ( $this->mTitle ) {
       $htmlTitle = htmlspecialchars( $this->mTitle->getPrefixedText() );
       // only hyperlink the title if this is for the latest revision of the title
-      if ( !( isset( $this->mQuery['curid'] ) || $this->mRevision ) ) {
+      if ( $canCreate && !( isset( $this->mQuery['curid'] ) || $this->mRevision ) ) {
         $htmlTitle = Html::rawElement( 'a', array( 'href' => $target ), $htmlTitle );
       }
       $fields['target-title'] = array(
@@ -120,9 +131,10 @@ class NumericUrlSpecialPage extends FormSpecialPage {
       );
 
       if ( $this->mRevision ) {
-        $context = $this->getContext();
-        $timestamp = $context->getLanguage()->userTimeAndDate( $this->mRevision->getTimestamp(), $context->getUser() );
-        $htmlTimestamp = Html::rawElement( 'a', array( 'href' => $target ), $timestamp );
+        $htmlTimestamp = $context->getLanguage()->userTimeAndDate( $this->mRevision->getTimestamp(), $user );
+        if( $canCreate ) {
+          $htmlTimestamp = Html::rawElement( 'a', array( 'href' => $target ), $htmlTimestamp );
+        }
         $fields['oldid'] = array(
           'type' => 'info',
           'label-message' => "$mp-oldid",
@@ -138,19 +150,23 @@ class NumericUrlSpecialPage extends FormSpecialPage {
       }
     }
 
+    $htmlTarget = $targetPrefixHtml . htmlspecialchars( $target ) ;
+    if( $canCreate ) {
+        $htmlTarget = Html::rawElement( 'a',
+          array(
+            'href' => ( $canCreate ? $target : false ),
+            'title' => $this->mTarget,
+          ),
+          $htmlTarget
+        );  
+    }
     $fields['target'] = array(
       'type' => 'info',
       'cssclass' => "$mp-target",
       'label-message' => "$mp-target",
+      'title' => $this->mTarget,
       'raw' => true,
-      'default' =>
-        Html::rawElement( 'a',
-          array(
-            'href' => $target,
-            'title' => $this->mTarget,
-          ),
-          $targetPrefixHtml . htmlspecialchars( $target )
-          ),  
+      'default' => $htmlTarget,
     );
     
     // display scheme selection if our host isn't scheme-specific
@@ -173,7 +189,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
       }
     }
  
-    if ( 0 && $this->mNumericUrl ) {
+    if ( $this->mNumericUrlPath ) {
       $fields['numeric'] = array(
         'type' => 'info',
         'label-message' => "$mp-numeric",
@@ -183,16 +199,44 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
       $fields['expiry'] = array(
         'type' => 'info',
-        'cssclass' => 'mw-info-numeric-expiry',
+        'cssclass' => "$mp-expiry",
         'label-message' => "$mp-expiry",
         'default' => strftime( '%Y-%m-%d %H:%M:%SZ', time() + 3600*24*7*13 ), // 91 days
       );
     }
 
+    $fields['unavailable'] = array();
+ 
+    // create our submit button
+    $fields['submit'] = array(
+      'type' => 'submit',
+      'default' => wfMessage("$mp-submit")->text(),
+    );
+ 
+    if ( !$canCreate ) {
+      if ( ( !$this->mNumericUrlPath ) || ( !NumericUrlCommon::isAllowed( 'follow', $user ) ) ) {
+        // We lack rights to create it or it exists, but we aren't allowed to see it
+        // Simply report that the numeric URL is not available.
+        $fields['unavailable'] = array(
+          'type' => 'info',
+          'cssclass' => "$mp-unavailable",
+          'label-message' => "$mp-numeric",
+          'default' => wfMessage("$mp-unavailable")->text(),
+        );
+      }
+ 
+      // Disable the submit button if we can't create the numeric URL
+      $fields['submit']['disabled'] = true;
+ 
+    }
+    if ( !count( $fields['unavailable'] ) ) {
+      unset( $fields['unavailable'] );
+    }
+    
     return $fields;
   }
   
-  /** For parameters and semantics, see FormSpecialPage::onSubmit(). */
+  /** For parameters and semantics, see FormSpecialPage::onSuccess(). */
 	public function onSubmit( array $data ) {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
     return false;
@@ -201,6 +245,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   /** For parameters and semantics, see FormSpecialPage::onSuccess(). */
 	public function onSuccess() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
+    var_dump(__METHOD__); exit(3);
   }
 
   /** For parameters and semantics, see SpecialPage::getDescription(). */
@@ -226,6 +271,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   /** For parameters and semantics, see FormSpecialPage::alterForm(). */
   protected function alterForm( HTMLForm $form ) {
     $form->setSubmitTextMsg( $this->getMessagePrefix() . '-submit' );
+    $form->addHiddenField( NumericUrlCommon::$mConfig->toolLinkQueryParam, wfArrayToCgi( $this->mQuery ) );
   }
   
   private function _getTitle() {
@@ -256,7 +302,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     if ( isset( $this->mQuery['curid'] ) || isset( $this->mQuery['oldid'] ) ) {
       if ( isset( $this->mQuery['oldid'] ) ) {
         unset( $this->mQuery['curid'] );
-        $this->mRevision = Revision::newFromTitle( $title, $this->mQuery['oldid'] );
+        $this->mRevision = Revision::newFromTitle( $this->mTitle, $this->mQuery['oldid'] );
         $query[] = "oldid={$this->mQuery['oldid']}";
       } else {
         // curid must match the title's article ID
@@ -278,18 +324,20 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     if ( isset( $this->mQuery['action'] ) ) {
       $query[] = "action={$this->mQuery['action']}";
     }
+ 
+    // add the query to the path
     if ( count($query) ) {
       $path .= '?' . implode( '&', $query );
     }
-    
+ 
     // set the scheme
     $this->mScheme = NumericUrlCommon::$mBaseScheme;
  
     // set the redirection target
     $this->mTarget = NumericUrlCommon::$mBaseUrl . $path ;
-    
+ 
   }
-  
+
   /** */
   private function _redirect( $out, $url, $status = 307 ) {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
@@ -317,7 +365,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
   /** */
   private function _isValidToolPageQuery() {
     NumericUrlCommon::_debugLog( 20, __METHOD__ );
- 
+    
     if ( !$this->mTarget ) {
       $this->_buildTarget();
     }
@@ -330,6 +378,9 @@ class NumericUrlSpecialPage extends FormSpecialPage {
       );
       return false;
     }
+    
+    // bugbug actually look it up
+    $this->mNumericUrlPath = null;
  
     return true;
   }
@@ -353,7 +404,14 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     
     $this->outputHeader( "{$this->_mp}-toolform-summary" );
 
+ 
     $form = $this->getForm();
+    // we manage our own submit button
+    //$form->suppressDefaultSubmit();
+    
+    //if ( !NumericUrlCommon::isAllowed(array( 'follow', 'create-basic' ), $this->getContext()->getUser() ) ) {
+    //}
+    
     if ( $form->show() ) {
       $this->onSuccess();
     }

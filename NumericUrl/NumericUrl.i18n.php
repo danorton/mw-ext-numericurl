@@ -70,6 +70,11 @@ $messages['en'] = array(
 'numericurl-toolform-submit'  => 'Make numeric',
 'numericurl-toolform-expiry'  => 'Expiration:',
 'numericurl-toolform-numeric' => 'Numeric URL:',
+'numericurl-toolform-unavailable' => 'A numeric URL is not available for this long URL.',
+
+'action-numericurl-follow'       => 'view numeric URLs',
+'action-numericurl-create-basic' => 'create basic numeric URLs',
+
 ) ;
 $specialPageAliases['en'] = array(
 MW_EXT_NUMERICURL_NAME => array( 'NumericUrl' ),
