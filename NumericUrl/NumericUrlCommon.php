@@ -148,51 +148,33 @@ class NumericUrlCommon {
 			);
 		}
 	}
-	
-  /**
-   * Build a full URL from a relative URL
-   *
-   * See RFC 3986, section 5.2, "Relative Resolution"
-   *
-   */
-  /* ///
-	public static function fullUrlFromRelativeUrl( $relativeUrl, $baseUrl = null ) {
-    // Use our own server's base URL as the default template
-    if ( $baseUrl === null ) {
-      global $wgServer;
-      $baseUrl = $wgServer ;
+  
+  /** */
+  public static function parseUrl( $url ) {
+    // start with the normal PHP parse_url
+    $urlParts = parse_url( $url );
+    
+    // Our parse, however, works without a scheme
+    if ( !( $urlParts && !isset( $urlParts['scheme'] ) ) ) {
+      // but it must start with the authority
+      if ( substr( $url, 0, 2 ) === '//' ) {
+        // add a scheme so that PHP parse will recognize it
+        $urlParts = parse_url( WebRequest::detectProtocol() . ":{$url}" );
+      }
+      // bail if PHP parse_url still can't recognize it
+      if ( !( $urlParts && $urlParts['scheme'] ) ) {
+        return false;
+      }
+      unset( $urlParts['scheme'] );
     }
-    // if the base scheme is missing or is '//', make it "https" for parse_url processing
-    $baseScheme = preg_replace( self::_URL_SCHEME_REGEX, '$1', $baseUrl );
-    if ( ( $baseScheme === '' ) || ( $baseScheme === '//' ) {
-      $baseUrl = 'https://' . preg_replace( self::_URL_SCHEME_REGEX, '$1', $baseUrl );
+    // The URL must not have a password, but must have a host and a path
+    if ( isset( $urlParts['pass'] || !( isset( $urlParts['host'] ) && isset( $urlParts['path'] ) ) ) {
+      return false;
     }
-    $baseScheme = preg_replace( self::_URL_SCHEME_REGEX, '$1', $baseUrl );
-    if ( $baseScheme === '' ) {
-      $baseScheme = '//';
-    }
-    if ( $baseScheme === '//' ) {
-      $baseParts = parse_url( 'http://' . preg_replace( self::_URL_SCHEME_REGEX, '$3', $baseUrl ) );
-      unset ( $baseParts['scheme'] );
-    } else {
-      $baseParts = parse_url( $baseScheme . preg_replace( self::_URL_SCHEME_REGEX, '$3', $baseUrl ) );
-    }
-
-    $relativeScheme = preg_replace( self::_URL_SCHEME_REGEX, '$1', $relativeUrl );
-    if ( $relativeScheme === '' ) {
-      // see if the relative URL starts with a host 
-      if ( isset( $relativeUrl[1] ) && ( $relativeUrl[1] === '/') && ( $relativeUrl[0] === '/' )
-      $relativeScheme = '//';
+    return $urlParts;
+  }
  
-      $relativeUrl = $relativeScheme . preg_replace( self::_URL_SCHEME_REGEX, '$3', $relativeUrl ) ;
-    }
-
-		$fullUrl = 
-				preg_replace( self::_URL_SCHEME_REGEX, '$1', $url )
-			. preg_replace( self::_URL_SCHEME_REGEX, '$3', $url ) ;
-	}
-  //*///
-
+	
 	/**
    * Display a link to our basic creation tool in the toolbox for certain pages.
    */

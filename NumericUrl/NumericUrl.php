@@ -149,16 +149,21 @@ $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-follow'] = true;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-group'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-global'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-notrack'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-password'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-noexpire'] = false;
+$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-short'] = false;
+$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-medium'] = false;
+$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-long'] = false;
+$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-never'] = false;
+
+$wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . '-create-group'] = true;
+$wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-long'] = true;
 
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-follow'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-group'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-global'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-notrack'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-password'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-noexpire'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-short'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-medium'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-long'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-expire-never'] = true;
 
 /** @}*/

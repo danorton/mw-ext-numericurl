@@ -270,7 +270,6 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
   /** For parameters and semantics, see FormSpecialPage::alterForm(). */
   protected function alterForm( HTMLForm $form ) {
-    $form->setSubmitTextMsg( $this->getMessagePrefix() . '-submit' );
     $form->addHiddenField( NumericUrlCommon::$mConfig->toolLinkQueryParam, wfArrayToCgi( $this->mQuery ) );
   }
   
@@ -371,7 +370,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
     }
  
     // validate the target URL
-    $urlParts = self::_parseUrl( $this->mTarget );
+    $urlParts = NumericUrlCommon::parseUrl( $this->mTarget );
     if ( !$urlParts ) {
       NumericUrlCommon::_debugLog( 10,
         sprintf('%s(): Invalid target URL: <%s>', __METHOD__, $this->mTarget )
@@ -407,10 +406,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
  
     $form = $this->getForm();
     // we manage our own submit button
-    //$form->suppressDefaultSubmit();
-    
-    //if ( !NumericUrlCommon::isAllowed(array( 'follow', 'create-basic' ), $this->getContext()->getUser() ) ) {
-    //}
+    $form->suppressDefaultSubmit();
     
     if ( $form->show() ) {
       $this->onSuccess();
