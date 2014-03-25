@@ -65,31 +65,143 @@ class NumericUrlCommon {
 	const URL_SCHEME_FOLLOW = '//';
 
 	/** Extension configuration; from global $wgNumericUrl */
-	public static $mConfig;
+	public static $config;
 
 	/** Singleton object to this (otherwise static) class */
 	public static $self;
 
 	/** */
-	public static $mBaseUrl;
+	public static $baseUrl;
 
 	/** */
-	public static $mBaseScheme;
+	public static $defaultSchemePort = array(
+		'http'  => 80,
+		'https' => 443,
+		'ftp'   => 21,
+	);
+
+	/** */
+	public static $baseScheme;
 
 	/** Subset of page actions for which we show the toolbox link. */
-	public static $mToolboxActions = array( 'view',
+	public static $toolboxActions = array( 'view',
 		// 'cached', 'credits', 'edit', 'history',
 		// 'info', 'purge', 'watch',
 		);
 
 	/** If to display the toolbox link on specific page ID pages. */
-	public static $mToolboxOnPageId = true; // false;
+	public static $toolboxOnPageId = true; // false;
 
 	/** */
 	public static $_debugLogLevel = 0;
 
 	/** */
 	public static $userRightsNames;
+
+	/** */
+	public static function isUrlValid( $url ) {
+	}
+
+	/** */
+	public static function isUrlLocal( $url ) {
+	}
+
+	/** */
+	public static function isUrlBasic( $url ) {
+	}
+
+	/** */
+	public static function isUrlInGroup( $url ) {
+	}
+
+	/**
+	 * Assemble URL parts into an authority component.
+	 *
+	 * This puts together what parseUrl() took apart. cf. RFC 3986.
+	 */
+	public static function authorityFromUrlParts( $urlParts, $defaultPort = null ) {
+		$authority = null;
+
+		// We can't have a "relative" authority, so we must have a host, at least.
+		if ( isset( $urlParts['host'] ) ) {
+
+			if ( isset( $urlParts['user'] ) ) {
+				// user
+				$authority .= $urlParts['user'];
+
+				// password
+				if ( isset( $urlParts['pass'] ) ) {
+					// output the password separator/prefix and the password
+					$authority .= ":{$urlParts['pass']}";
+				}
+				// user:password separator/suffix
+				$authority .= '@';
+			}
+
+			// host
+			$authority .= strtolower( $urlParts['host'] );
+
+			// port
+			if ( isset( $urlParts['port'] ) && ( ( (int)$urlParts['port'] ) !== $defaultPort ) ) {
+				// output the port separator/prefix and the port
+				$authority .= ':' . (int)$urlParts['port'];
+			}
+
+		}
+
+		return $authority;
+	}
+
+	/**
+	 * Assemble URL parts into a string.
+	 *
+	 * This is like wfAssembleUrl() without the need for 'delimiter'. This puts together
+	 * what parseUrl() took apart. cf. RFC 3986.
+	 */
+	public static function urlFromParts( $urlParts ) {
+		$url = '';
+		$scheme = '';
+		$defaultPort = null;
+
+		// scheme (may be empty)
+		if ( isset( $urlParts['scheme'] ) ) {
+			// we'll need $scheme later, when assembling the default port
+			$scheme = strtolower( $urlParts['scheme'] );
+			// output the scheme and the scheme separator/suffix
+			$url .= "$scheme:";
+
+			// note the default port for this scheme
+			if ( isset( self::$defaultSchemePort[$scheme] ) ) {
+				$defaultPort = self::$defaultSchemePort[$scheme];
+			}
+		}
+
+		// authority
+		$authority = self::authorityFromUrlParts( $urlParts, $defaultPort );
+		if ( $authority !== null ) {
+			// output the authority separator/prefix and the authority
+			$url .= "//$authority";
+		}
+
+		// path
+		if ( isset( $urlParts['path'] ) ) {
+			$url .= $urlParts['path'];
+		}
+
+		// query
+		if ( isset( $urlParts['query'] ) ) {
+			// output the query separator/prefix and the query
+			$url .= "?{$urlParts['query']}";
+		}
+
+		// fragment
+		if ( isset( $urlParts['fragment'] ) ) {
+			// output the fragment separator/prefix and the fragment
+			$url .= "#{$urlParts['fragment']}";
+		}
+
+		return $url;
+	}
 
 	/**
 	 * Disable the class constructor.
@@ -154,43 +266,160 @@ class NumericUrlCommon {
 	/** */
 	public static function onWebRequestPathInfoRouter( $pathRouter ) {
 		self::_debugLog( 20, __METHOD__ );
-		if ( self::$mConfig->template ) {
-			$pathRouter->add( self::$mConfig->template,
+		if ( self::$config->template ) {
+			$pathRouter->add( self::$config->template,
 				array( 'title' => self::$_specialPageTitle->getPrefixedText() )
 			);
 		}
 	}
 
-	/** */
+	/**
+	 * Parse a URL per RFC 3986.
+	 *
+	 * Unlike parse_url(), we don't require a path. Unlike wfParseUrl(), which parses
+	 * email URLs as mailto:<user>@<host>, we parse as mailto:<path>.
+	 */
 	public static function parseUrl( $url ) {
-		// start with the normal PHP parse_url
-		$urlParts = parse_url( $url );
-
-		// Our parse, however, works without a scheme
-		if ( !( $urlParts && !isset( $urlParts['scheme'] ) ) ) {
-			// but it must start with the authority
-			if ( substr( $url, 0, 2 ) === '//' ) {
-				// add a scheme so that PHP parse will recognize it
-				$urlParts = parse_url( WebRequest::detectProtocol() . ":{$url}" );
-			}
-			// bail if PHP parse_url still can't recognize it
-			if ( !( $urlParts && $urlParts['scheme'] ) ) {
-				return false;
-			}
-			unset( $urlParts['scheme'] );
+		if ( $url === '' ) {
+			$url = './';
 		}
-
-		// The URL must not have a password, but must have a host and a path
-		if ( isset( $urlParts['pass'] ) || !( isset( $urlParts['host'] ) && isset( $urlParts['path'] ) ) ) {
+		// start with the normal PHP parse_url
+		wfSuppressWarnings();
+		$urlParts = parse_url( $url );
+		wfRestoreWarnings();
+		// bail if "seriously malformed"
+		if ( !$urlParts ) {
 			return false;
 		}
 
-		if ( isset( $urlParts['pass'] ) || !( isset( $urlParts['host'] ) && isset( $urlParts['path'] ) ) ) {
+		// Like wfParseUrl(), we don't require a scheme
+		if ( !isset( $urlParts['scheme'] ) ) {
+			// unlike wfParseUrl, we don't require an authority
+			if ( substr( $url, 0, 2 ) === '//' ) {
+				// If there's an authority without a scheme, add a scheme so that parse_url()
+				// will correctly recognize the authority.
+				wfSuppressWarnings();
+				$urlParts = parse_url( "http:$url" );
+				wfRestoreWarnings();
+			  // bail if PHP parse_url still can't parse it
+			  if ( !$urlParts ) {
+					return false;
+				}
+			}
+			$urlParts['scheme'] = null;
+		} else {
+			// we must always return lower case of scheme
+			// cf. RFC 3986, section 6.2.2.1., "Case Normalization"
+			$urlParts['scheme'] = strtolower( $urlParts['scheme'] );
+		}
+
+		if ( isset( $urlParts['host'] ) ) {
+			// we must always return lower case of host
+			// cf. RFC 3986, section 6.2.2.1., "Case Normalization"
+			$urlParts['host'] = strtolower( $urlParts['host'] );
+		} elseif ( $urlParts['scheme']
+							&& isset( $urlParts['path'] )
+							&& ( substr( $urlParts['path'], 0, 1 ) !== '/' ) ) {
+			// Restore the leading '/' from the path if parse_url removed it,
+			// believing that it should start with a Microsoft drive letter
+			$urlParts['path'] = "/{$urlParts['path']}";
+		}
+
+		// remove dot segments from path
+		if ( isset( $urlParts['path'] ) ) {
+			$urlParts['path'] = self::removeDotSegments( $urlParts['path'] );
+		}
+
+		// remove our scheme placeholder if there is no scheme in the URL
+		if ( $urlParts['scheme'] === null ) {
+			unset( $urlParts['scheme'] );
 		}
 
 		return $urlParts;
 	}
 
+	/**
+	 * Remove dot segments from url path.
+	 *
+	 * If $eatRelativeDoubleDots is false, preserve leading '..' segments in relative paths.
+	 * allowing merges with absolute paths in the way that browsers merge relative href
+	 * attributes with a base URL.
+	 *
+	 * If $eatRelativeDoubleDots is true, this function behaves like the algorithm described
+	 * in RFC 3986, which discards leading '..' segments.
+	 *
+	 */
+	public static function removeDotSegments( $urlPath, $eatRelativeDoubleDots = false ) {
+		if ( !strlen( $urlPath ) ) {
+			return $urlPath;  // degenerate case
+		}
+		$input = array_reverse( explode( '/', $urlPath ) );
+		if ( $urlPath[0] === '/' ) {
+			$absPrefix = '/';
+			$eatDoubleDots = true;
+			array_pop( $input );
+		} else {
+			$eatDoubleDots = $eatRelativeDoubleDots;
+			$absPrefix = '';
+		}
+		$output = array();
+		while( count( $input ) ) {
+			$segment = array_pop( $input );
+			if ( ( $segment === '..' ) && ( $eatDoubleDots || ( count( $output ) && ( $output[count( $output) - 1] !== '..' ) ) ) ) {
+				array_pop( $output );
+			} elseif ( $segment !== '.' ) {
+				$output[] = $segment;
+			}
+		}
+		return $absPrefix . implode( '/', $output );
+	}
+
+	/**
+	 * Get fully qualified URL parts from the given (possibly relative) URL.
+	 *
+	 * TODO: reduce dots in paths
+	 */
+	public static function fullUrlFromUrl( $url, $urlParts = null ) {
+		if ( $urlParts === null ) {
+			$urlParts = self::parseUrl( $url );
+		}
+		if ( $urlParts === false ) {
+			return false;
+		}
+
+		if ( !isset( $urlParts['scheme'] ) ) {
+		}
+
+	}
+
+	/**
+	 * Is the target URL, at the very least, valid?
+	 */
+	public static function isValidTargetUrl( $url, $urlParts = null ) {
+		if ( $urlParts === null ) {
+			$urlParts = self::parseUrl( $url );
+		}
+		if ( $urlParts === false ) {
+			return false;
+		}
+	}
+
+	public static function scopeFromUrl( $url, $urlParts = null ) {
+		if ( $urlParts === null ) {
+			$urlParts = self::parseUrl( $url );
+		}
+		if ( $urlParts === false ) {
+			return false;
+		}
+		// first, check the authority part to see if it's
+		if ( isset( $urlParts['scheme'] ) ) {
+		}
+		// this is a local URL; see if it has basic URL query parameters, only
+		if ( isset( $urlParts['fragment'] ) ) {
+			return self::URL_SCOPE_LOCAL;
+		}
+		return self::URL_SCOPE_BASIC;
+	}
 
 	/**
 	 * Display a link to our basic creation tool in the toolbox for certain pages.
@@ -207,7 +436,7 @@ class NumericUrlCommon {
 		$action = Action::getActionName( $context );
 
 		// skip this unless specifically configured for the current action
-		if ( !in_array( $action, self::$mToolboxActions ) ) {
+		if ( !in_array( $action, self::$toolboxActions ) ) {
 			self::_debugLog( 20, __METHOD__ . ': not configured for specified action' );
 			return;
 		}
@@ -246,14 +475,14 @@ class NumericUrlCommon {
 		$urlTitle = $title->getPrefixedUrl();
 		if ( $urlTitle ) {
 			// see if the configuration rules out this title
-			if ( self::$mConfig->reTitlesWithToolLink ) {
-				if ( !preg_match( self::$mConfig->reTitlesWithToolLink, $urlTitle ) ) {
+			if ( self::$config->reTitlesWithToolLink ) {
+				if ( !preg_match( self::$config->reTitlesWithToolLink, $urlTitle ) ) {
 					self::_debugLog( 20, __METHOD__ . ': did not match reTitlesWithToolLink' );
 					return;
 				}
 			}
-			if ( self::$mConfig->reTitlesWithoutToolLink ) {
-				if ( preg_match( self::$mConfig->reTitlesWithoutToolLink, $urlTitle ) ) {
+			if ( self::$config->reTitlesWithoutToolLink ) {
+				if ( preg_match( self::$config->reTitlesWithoutToolLink, $urlTitle ) ) {
 					self::_debugLog( 20, __METHOD__ . ': matched reTitlesWithoutToolLink' );
 					return;
 				}
@@ -275,7 +504,7 @@ class NumericUrlCommon {
 			$oldid = Article::newFromID( $articleId )->getOldID();
 			if ( $oldid ) {
 				// bail if we don't display the toolbox link for revision pages
-				if ( !self::$mConfig->revisionToolLink ) {
+				if ( !self::$config->revisionToolLink ) {
 					self::_debugLog( 20, __METHOD__ . ': not configured for display on specific revisions' );
 					return;
 				}
@@ -289,7 +518,7 @@ class NumericUrlCommon {
 				$curid = $context->getRequest()->getInt( 'curid' );
 				if ( $curid ) {
 					// bail if we don't display the toolbox link for current-revision page-ID pages
-					if ( !self::$mConfig->pageIdToolLink ) {
+					if ( !self::$config->pageIdToolLink ) {
 						self::_debugLog( 20, __METHOD__ . ': not configured for display on page-ID pages' );
 						return;
 					}
@@ -315,7 +544,7 @@ class NumericUrlCommon {
 				Html::Element( 'a',
 					array(
 						'href' => self::$_path . '?'
-							. self::$mConfig->toolLinkQueryParam . '=' . rawurlencode( implode( '&', $subPath )),
+							. self::$config->toolPageQueryParam . '=' . rawurlencode( implode( '&', $subPath )),
 						'title' => wfMessage( 'numericurl-toolbox-title' )->text(),
 						),
 					wfMessage( 'numericurl-toolbox-text' )->text()
@@ -385,11 +614,11 @@ class NumericUrlCommon {
 			self::$self = new self;
 
 			global $wgNumericUrl;
-			self::$mConfig = self::objectFromArray( $wgNumericUrl );
+			self::$config = self::objectFromArray( $wgNumericUrl );
 
-		  self::$_specialPageTitle = SpecialPage::getTitleFor( MW_EXT_NUMERICURL_NAME );
+		  self::$_specialPageTitle = SpecialPage::getTitleFor( self::SPECIAL_PAGE_TITLE );
 
-			$titleText = $wgCanonicalNamespaceNames[NS_SPECIAL] . ':' .
+			$titleText = "{$wgCanonicalNamespaceNames[NS_SPECIAL]}:" .
 				self::$_specialPageTitle->mUrlform;
 
 			self::$_path = str_replace(
@@ -400,12 +629,12 @@ class NumericUrlCommon {
 			self::$_debugLogGroup = 'extension_' . self::EXTENSION_NAME;
 
 			global $wgServer;
-			self::$mBaseUrl = $wgServer;
-			self::$mBaseScheme =  WebRequest::detectProtocol();
+			self::$baseUrl = $wgServer;
+			self::$baseScheme =  WebRequest::detectProtocol();
 			// specify the protocol that loaded us if our server is not hard-configured
-			if ( substr( self::$mBaseUrl, 0, 2 ) === '//' ) {
-				self::$mBaseUrl = WebRequest::detectProtocol() . ':' . self::$mBaseUrl;
-				self::$mBaseScheme = self::URL_SCHEME_FOLLOW;
+			if ( substr( self::$baseUrl, 0, 2 ) === '//' ) {
+				self::$baseUrl = WebRequest::detectProtocol() . ':' . self::$baseUrl;
+				self::$baseScheme = self::URL_SCHEME_FOLLOW;
 			}
 
 			// flip the user rights array for faster key access

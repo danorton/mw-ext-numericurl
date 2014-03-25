@@ -5,14 +5,17 @@ error_reporting(-1);
 class NumericUrlLongUrl {
 
   /** 
-   * @var mLongUrl Long version of the URL
+   * @var longUrl Long version of the URL
    */
    
-  public $mLongUrl;
+  public $longUrl;
 
   public function __construct( $longUrl ) {
   }
   
+  public function isValid() {
+  }
+
   public function isLocal() {
   }
   
