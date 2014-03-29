@@ -148,12 +148,12 @@ if ( !isset( $wgNumericUrl['api']['mid'] ) ) {
 
 global
 	$wgExtensionCredits, $wgExtensionMessagesFiles,
-	$wgHooks, $wgAPIPropModules, $wgAutoloadClasses, $wgAPIModules
+	$wgAPIPropModules, $wgAutoloadClasses, $wgAPIModules
 ;
 
 $wgExtensionCredits['api'][] = array(
-	'path' => __DIR__ . '/' . MW_EXT_NUMERICURL_NAME,
-	'name' => MW_EXT_NUMERICURL_NAME,
+	'path'         => __DIR__ . '/' . MW_EXT_NUMERICURL_NAME,
+	'name'         => MW_EXT_NUMERICURL_NAME,
 	'description'  => 'Provide numeric URLs of various radixes.',
 	'version'      => MW_EXT_NUMERICURL_VERSION,
 	'author'       => MW_EXT_NUMERICURL_AUTHOR,
@@ -168,10 +168,13 @@ $wgExtensionMessagesFiles[MW_EXT_NUMERICURL_NAME] = __DIR__ . '/NumericUrl.i18n.
 $wgAutoloadClasses['NumericUrlCommon'] = __DIR__ . '/NumericUrlCommon.php';
 
 // Hook special redirection paths
-$wgHooks['WebRequestPathInfoRouter'][] = 'NumericUrlCommon::onWebRequestPathInfoRouter';
+Hooks::register( 'WebRequestPathInfoRouter', 'NumericUrlCommon::onWebRequestPathInfoRouter' );
+
+// Our own hook, to report domain regions
+Hooks::register( 'NumericUrlRegionCheck', 'NumericUrlCommon::onNumericUrlRegionCheck' );
 
 // Hook toolbox link
-$wgHooks['SkinTemplateToolboxEnd'][] = 'NumericUrlCommon::onSkinTemplateToolboxEnd';
+Hooks::register( 'SkinTemplateToolboxEnd', 'NumericUrlCommon::onSkinTemplateToolboxEnd' );
 
 // Special page handling
 $wgAutoloadClasses['NumericUrlSpecialPage'] = __DIR__ . '/NumericUrlSpecialPage.php';
@@ -202,7 +205,7 @@ $wgResourceModules['ext.numericUrl.toolpage'] = array(
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-follow'] = true;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-local'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-group-iw-local'] = false;
+$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-region-iw-local'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-global'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-short'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-medium'] = false;
@@ -215,7 +218,7 @@ $wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-follow'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-local'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-group-iw-local'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-region-iw-local'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-global'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-short'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-medium'] = true;

@@ -32,6 +32,11 @@ if ( !defined( 'MW_EXT_NUMERICURL_NAME' ) ) {
 	die ( 1 );
 }
 
+global $IP;
+require_once "$IP/extensions/Weirdo/Weirdo.php";
+
+require_once __DIR__ . '/NumericUrlMapInstance.php';
+
 class NumericUrlCommon {
 
 	/** */
@@ -67,18 +72,11 @@ class NumericUrlCommon {
 	/** Extension configuration; from global $wgNumericUrl */
 	public static $config;
 
-	/** Singleton object to this (otherwise static) class */
-	public static $self;
-
 	/** */
 	public static $baseUrl;
 
 	/** */
-	public static $defaultSchemePort = array(
-		'http'  => 80,
-		'https' => 443,
-		'ftp'   => 21,
-	);
+	public static $baseUrlParts;
 
 	/** */
 	public static $baseScheme;
@@ -98,12 +96,28 @@ class NumericUrlCommon {
 	/** */
 	public static $userRightsNames;
 
-	/** */
-	public static function isUrlValid( $url ) {
+
+	/** Constructor for class's singleton object.
+	 *
+	 * Throws ErrorException if singleton already created.
+	 */
+	public function __construct() {
+		if ( self::$_self || !self::$_singleton ) {
+			throw new ErrorException( 'Invalid attempt to instantiate static/singleton ' . __CLASS__ . ' class' );
+		}
 	}
 
-	/** */
-	public static function isUrlLocal( $url ) {
+	/**
+	 * Get class's singleton object.
+	 *
+	 * @returns     NumericUrlCommon instance.
+	 */
+	public static function singleton() {
+		if ( !self::$_self ) {
+			self::$_singleton = true;
+			self::$_self = new self();
+		}
+		return self::$_self;
 	}
 
 	/** */
@@ -113,110 +127,6 @@ class NumericUrlCommon {
 	/** */
 	public static function isUrlInGroup( $url ) {
 	}
-
-	/**
-	 * Assemble URL parts into an authority component.
-	 *
-	 * This puts together what parseUrl() took apart. cf. RFC 3986.
-	 */
-	public static function authorityFromUrlParts( $urlParts, $defaultPort = null ) {
-		$authority = null;
-
-		// We can't have a "relative" authority, so we must have a host, at least.
-		if ( isset( $urlParts['host'] ) ) {
-
-			if ( isset( $urlParts['user'] ) ) {
-				// user
-				$authority .= $urlParts['user'];
-
-				// password
-				if ( isset( $urlParts['pass'] ) ) {
-					// output the password separator/prefix and the password
-					$authority .= ":{$urlParts['pass']}";
-				}
-				// user:password separator/suffix
-				$authority .= '@';
-			}
-
-			// host
-			$authority .= strtolower( $urlParts['host'] );
-
-			// port
-			if ( isset( $urlParts['port'] ) && ( ( (int)$urlParts['port'] ) !== $defaultPort ) ) {
-				// output the port separator/prefix and the port
-				$authority .= ':' . (int)$urlParts['port'];
-			}
-
-		}
-
-		return $authority;
-	}
-
-	/**
-	 * Assemble URL parts into a string.
-	 *
-	 * This is like wfAssembleUrl() without the need for 'delimiter'. This puts together
-	 * what parseUrl() took apart. cf. RFC 3986.
-	 */
-	public static function urlFromParts( $urlParts ) {
-		$url = '';
-		$scheme = '';
-		$defaultPort = null;
-
-		// scheme (may be empty)
-		if ( isset( $urlParts['scheme'] ) ) {
-			// we'll need $scheme later, when assembling the default port
-			$scheme = strtolower( $urlParts['scheme'] );
-			// output the scheme and the scheme separator/suffix
-			$url .= "$scheme:";
-
-			// note the default port for this scheme
-			if ( isset( self::$defaultSchemePort[$scheme] ) ) {
-				$defaultPort = self::$defaultSchemePort[$scheme];
-			}
-		}
-
-		// authority
-		$authority = self::authorityFromUrlParts( $urlParts, $defaultPort );
-		if ( $authority !== null ) {
-			// output the authority separator/prefix and the authority
-			$url .= "//$authority";
-		}
-
-		// path
-		if ( isset( $urlParts['path'] ) ) {
-			$url .= $urlParts['path'];
-		}
-
-		// query
-		if ( isset( $urlParts['query'] ) ) {
-			// output the query separator/prefix and the query
-			$url .= "?{$urlParts['query']}";
-		}
-
-		// fragment
-		if ( isset( $urlParts['fragment'] ) ) {
-			// output the fragment separator/prefix and the fragment
-			$url .= "#{$urlParts['fragment']}";
-		}
-
-		return $url;
-	}
-
-	/**
-	 * Disable the class constructor.
-	 *
-	 * This constructor will throw an error on any attempt to instantiate this class.
-	 */
-	public function __construct() {
-		self::_debugLog( 20, __METHOD__ );
-		if ( is_subclass_of( self::$self, __CLASS__ ) ) {
-			throw error( new MWException(
-				sprintf( 'Error detected by class %s: attempt to instantiate a static-only class', __CLASS__ )
-			) );
-		}
-	}
-
 
 	/** */
 	public static function isAllowed( $userRightsName, $user = null ) {
@@ -239,28 +149,18 @@ class NumericUrlCommon {
 	}
 
 	/** */
-	private static function _isAllowedAll( $userRightsNames, $user ) {
-		foreach( $userRightsNames as $userRightsName ) {
-			if ( !self::isAllowed( $userRightsName, $user ) ) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	/** */
 	public static function getFullUserRightsName( $userRightsName ) {
-		static $fullUserRightsNames = array();
-		if ( !isset( $fullUserRightsNames[$userRightsName] ) ) {
+		static $fullUserRightsNamesCache = array();
+		if ( !isset( $fullUserRightsNamesCache[$userRightsName] ) ) {
 			if ( !isset( self::$userRightsNames[$userRightsName] ) ) {
 				trigger_error(
 					sprintf( '%s: unrecognized user rights name: "%s"', __METHOD__, $userRightsName ),
 					E_USER_WARNING );
 				return null;
 			}
-			$fullUserRightsNames[$userRightsName] = self::EXTENSION_NAME_LC . "-$userRightsName";
+			$fullUserRightsNamesCache[$userRightsName] = self::EXTENSION_NAME_LC . "-$userRightsName";
 		}
-		return $fullUserRightsNames[$userRightsName];
+		return $fullUserRightsNamesCache[$userRightsName];
 	}
 
 	/** */
@@ -273,145 +173,48 @@ class NumericUrlCommon {
 		}
 	}
 
-	/**
-	 * Parse a URL per RFC 3986.
-	 *
-	 * Unlike parse_url(), we don't require a path. Unlike wfParseUrl(), which parses
-	 * email URLs as mailto:<user>@<host>, we parse as mailto:<path>.
-	 */
-	public static function parseUrl( $url ) {
-		if ( $url === '' ) {
-			$url = './';
+	/** */
+	public static function onNumericUrlRegionCheck(
+		&$regions,
+		$urlText,
+		$urlParts,
+		$urlAuthority,
+		$urlMapInstance ) {
+
+		self::_debugLog( 20,
+			sprintf( '%s: url=\"%s\"; authority=\"%s\"', __METHOD__ , $urlText, $urlAuthority ),
+			E_USER_WARNING );
+
+		if ( self::iwLocalInfoFromUrl( $urlText ) ) {
+			$regions['iw_local'] = array( 'description-message' => 'numericurl-region-iw-local' );
 		}
-		// start with the normal PHP parse_url
-		wfSuppressWarnings();
-		$urlParts = parse_url( $url );
-		wfRestoreWarnings();
-		// bail if "seriously malformed"
-		if ( !$urlParts ) {
+		return true;
+	}
+
+	public static function reverseUrlTemplate( $urlTemplate, $urlResult ) {
+		$regex = '{^' . str_replace( '%241', '(.*)', rawurlencode( $urlTemplate ) ) . '$}';
+		if ( !preg_match( $regex, rawurlencode( $urlResult ), $matches ) ) {
 			return false;
 		}
-
-		// Like wfParseUrl(), we don't require a scheme
-		if ( !isset( $urlParts['scheme'] ) ) {
-			// unlike wfParseUrl, we don't require an authority
-			if ( substr( $url, 0, 2 ) === '//' ) {
-				// If there's an authority without a scheme, add a scheme so that parse_url()
-				// will correctly recognize the authority.
-				wfSuppressWarnings();
-				$urlParts = parse_url( "http:$url" );
-				wfRestoreWarnings();
-			  // bail if PHP parse_url still can't parse it
-			  if ( !$urlParts ) {
-					return false;
-				}
-			}
-			$urlParts['scheme'] = null;
-		} else {
-			// we must always return lower case of scheme
-			// cf. RFC 3986, section 6.2.2.1., "Case Normalization"
-			$urlParts['scheme'] = strtolower( $urlParts['scheme'] );
-		}
-
-		if ( isset( $urlParts['host'] ) ) {
-			// we must always return lower case of host
-			// cf. RFC 3986, section 6.2.2.1., "Case Normalization"
-			$urlParts['host'] = strtolower( $urlParts['host'] );
-		} elseif ( $urlParts['scheme']
-							&& isset( $urlParts['path'] )
-							&& ( substr( $urlParts['path'], 0, 1 ) !== '/' ) ) {
-			// Restore the leading '/' from the path if parse_url removed it,
-			// believing that it should start with a Microsoft drive letter
-			$urlParts['path'] = "/{$urlParts['path']}";
-		}
-
-		// remove dot segments from path
-		if ( isset( $urlParts['path'] ) ) {
-			$urlParts['path'] = self::removeDotSegments( $urlParts['path'] );
-		}
-
-		// remove our scheme placeholder if there is no scheme in the URL
-		if ( $urlParts['scheme'] === null ) {
-			unset( $urlParts['scheme'] );
-		}
-
-		return $urlParts;
+		return rawurldecode( $matches[1] );
 	}
 
 	/**
-	 * Remove dot segments from url path.
-	 *
-	 * If $eatRelativeDoubleDots is false, preserve leading '..' segments in relative paths.
-	 * allowing merges with absolute paths in the way that browsers merge relative href
-	 * attributes with a base URL.
-	 *
-	 * If $eatRelativeDoubleDots is true, this function behaves like the algorithm described
-	 * in RFC 3986, which discards leading '..' segments.
-	 *
+	 * Given a fully qualified URL, determine its scope.
 	 */
-	public static function removeDotSegments( $urlPath, $eatRelativeDoubleDots = false ) {
-		if ( !strlen( $urlPath ) ) {
-			return $urlPath;  // degenerate case
-		}
-		$input = array_reverse( explode( '/', $urlPath ) );
-		if ( $urlPath[0] === '/' ) {
-			$absPrefix = '/';
-			$eatDoubleDots = true;
-			array_pop( $input );
-		} else {
-			$eatDoubleDots = $eatRelativeDoubleDots;
-			$absPrefix = '';
-		}
-		$output = array();
-		while( count( $input ) ) {
-			$segment = array_pop( $input );
-			if ( ( $segment === '..' ) && ( $eatDoubleDots || ( count( $output ) && ( $output[count( $output) - 1] !== '..' ) ) ) ) {
-				array_pop( $output );
-			} elseif ( $segment !== '.' ) {
-				$output[] = $segment;
-			}
-		}
-		return $absPrefix . implode( '/', $output );
-	}
-
-	/**
-	 * Get fully qualified URL parts from the given (possibly relative) URL.
-	 *
-	 * TODO: reduce dots in paths
-	 */
-	public static function fullUrlFromUrl( $url, $urlParts = null ) {
-		if ( $urlParts === null ) {
-			$urlParts = self::parseUrl( $url );
-		}
+	public static function scopeFromUrl( $urlOrParts ) {
+		self::_debugLog( 20, __METHOD__ );
+		$urlParts = is_string( $urlOrParts ) ? NumericUrlMapInstance::parse( $url ) : $urlOrParts;
 		if ( $urlParts === false ) {
+			// not a valid url
 			return false;
 		}
-
-		if ( !isset( $urlParts['scheme'] ) ) {
-		}
-
-	}
-
-	/**
-	 * Is the target URL, at the very least, valid?
-	 */
-	public static function isValidTargetUrl( $url, $urlParts = null ) {
-		if ( $urlParts === null ) {
-			$urlParts = self::parseUrl( $url );
-		}
-		if ( $urlParts === false ) {
+		if ( NumericUrlMapInstance::isValid( $urlParts ) !== NumericUrlMapInstance::VALID_ABSOLUTE ) {
+			trigger_error(
+				sprintf( '%s: invalid URL%s', __METHOD__ , is_string( $urlOrParts ) ? ": \"$urlOrParts\"" : '' ),
+				E_USER_WARNING );
 			return false;
 		}
-	}
-
-	public static function scopeFromUrl( $url, $urlParts = null ) {
-		if ( $urlParts === null ) {
-			$urlParts = self::parseUrl( $url );
-		}
-		if ( $urlParts === false ) {
-			return false;
-		}
-		// first, check the authority part to see if it's
 		if ( isset( $urlParts['scheme'] ) ) {
 		}
 		// this is a local URL; see if it has basic URL query parameters, only
@@ -487,11 +290,20 @@ class NumericUrlCommon {
 					return;
 				}
 			}
-			$subPath[] = "title=$urlTitle";
+			$subPath[] = 'title=' . rawurlencode( $urlTitle );
 			self::_debugLog( 30,
 				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $subPath ) )
 			);
 		}
+
+		$url = new NumericUrlMapInstance( $title->getFullUrl( '', false, PROTO_RELATIVE ) );
+		self::_debugLog( 30,
+			sprintf( '%s():%u: url=%s; regions=(%s)', __METHOD__, __LINE__,
+				rawurlencode( $url ),
+				implode( ',', array_keys( $url->getRegions() ) )
+				)
+		);
+		$subPath[] = "url=" . rawurlencode( $url );
 
 		// pass the specific page ID and/or revision, if specified
 		$articleId = $title->getArticleID();
@@ -544,7 +356,7 @@ class NumericUrlCommon {
 				Html::Element( 'a',
 					array(
 						'href' => self::$_path . '?'
-							. self::$config->toolPageQueryParam . '=' . rawurlencode( implode( '&', $subPath )),
+							. self::$config->toolPageQueryParam . '=' . rawurlencode( implode( '&', $subPath ) ),
 						'title' => wfMessage( 'numericurl-toolbox-title' )->text(),
 						),
 					wfMessage( 'numericurl-toolbox-text' )->text()
@@ -580,21 +392,43 @@ class NumericUrlCommon {
 
 	}
 
-	/** Recursively convert an array to an object */
-	public static function objectFromArray( $array ) {
-		$o = (object) null;
-		foreach ( $array as $k => $v ) {
-			// replace null array key with a valid object field name
-			if ( $k === '' ) {
-				$k = '_null_' . __FUNCTION__;
-			}
-			if ( is_array( $v ) ) {
-				$o->{$k} = self::objectFromArray( $v ); // recurse on arrays
-			} else {
-				$o->{$k} = $v;
+	/** */
+	public static function iwLocalInfoFromUrl( $fullUrl ) {
+		static $iwLocalUrlsCache = array();
+		static $iwLocalPrefixesCache = null;
+		if ( isset( $iwLocalUrlsCache[$fullUrl] ) ) {
+			return $iwLocalUrlsCache[$fullUrl];
+		}
+		if ( $iwLocalPrefixesCache === null ) {
+			$iwLocalPrefixesCache = Interwiki::getAllPrefixes( true );
+		}
+		$iwLocalUrlsCache[$fullUrl] = false;
+		foreach ( $iwLocalPrefixesCache as $k => $prefix ) {
+			$title = self::reverseUrlTemplate( $prefix['iw_url'], $fullUrl );
+			if ( $title ) {
+				if ( $k !== 0 ) {
+					// keep $iwLocalPrefixesCache in MRU order
+					unset( $iwLocalPrefixesCache[$k] );
+					array_unshift( $iwLocalPrefixesCache, $prefix );
+				}
+				$iwLocalUrlsCache[$fullUrl] = array(
+					'interwiki' => $prefix,
+					'title' => $title,
+				);
+				break;
 			}
 		}
-		return $o;
+		return $iwLocalUrlsCache[$fullUrl];
+	}
+
+	/** */
+	private static function _isAllowedAll( $userRightsNames, $user ) {
+		foreach( $userRightsNames as $userRightsName ) {
+			if ( !self::isAllowed( $userRightsName, $user ) ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -610,11 +444,9 @@ class NumericUrlCommon {
 	public static function _initStatic() {
 		global $wgCanonicalNamespaceNames, $wgArticlePath;
 		self::_debugLog( 20, __METHOD__ );
-		if ( !self::$self ) {
-			self::$self = new self;
-
+		if ( !self::$config ) {
 			global $wgNumericUrl;
-			self::$config = self::objectFromArray( $wgNumericUrl );
+			self::$config = Weirdo::objectFromArray( $wgNumericUrl );
 
 		  self::$_specialPageTitle = SpecialPage::getTitleFor( self::SPECIAL_PAGE_TITLE );
 
@@ -628,20 +460,13 @@ class NumericUrlCommon {
 			);
 			self::$_debugLogGroup = 'extension_' . self::EXTENSION_NAME;
 
-			global $wgServer;
-			self::$baseUrl = $wgServer;
-			self::$baseScheme =  WebRequest::detectProtocol();
-			// specify the protocol that loaded us if our server is not hard-configured
-			if ( substr( self::$baseUrl, 0, 2 ) === '//' ) {
-				self::$baseUrl = WebRequest::detectProtocol() . ':' . self::$baseUrl;
-				self::$baseScheme = self::URL_SCHEME_FOLLOW;
-			}
+			self::$baseUrl = WebRequest::detectServer();
+			self::$baseUrlParts = WeirdoUrl::parse( self::$baseUrl );
 
-			// flip the user rights array for faster key access
+			// flip the user rights array for key access
 			self::$userRightsNames = array_flip( self::$_userRightsNamesFlipped );
 
-		}
-		else {
+		} else {
 			throw new WMException( 'Error: Attempt to invoke private method ' . __METHOD__ . '().' );
 		}
 	}
@@ -669,8 +494,11 @@ class NumericUrlCommon {
 	/** */
 	private static $_defaultUser;
 
-	/** */
-	//const _URL_SCHEME_REGEX = '"^(([a-z][a-z.+-]{1,32}:)?//)?(.*)$"';
+	/** Singleton object to this (otherwise static) class */
+	private static $_self;
+
+	/** Flag that indicates singleton has been instantiated */
+	private static $_singleton;
 
 }
 // Once-only static initialization

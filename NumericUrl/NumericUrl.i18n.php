@@ -72,6 +72,8 @@ $messages['en'] = array(
 'numericurl-toolform-numeric' => 'Numeric URL:',
 'numericurl-toolform-unavailable' => 'A numeric URL is not available for this long URL.',
 
+'numericurl-region-iw-local'  => 'Local Interwikis',
+
 'action-numericurl-follow'       => 'view numeric URLs',
 'action-numericurl-create-basic' => 'create basic numeric URLs',
 

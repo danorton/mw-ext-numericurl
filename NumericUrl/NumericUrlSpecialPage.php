@@ -55,6 +55,9 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	/** */
 	public $scheme;
 
+	/** URL map instance. */
+	public $mapInstance;
+
 	/** For parameters and semantics, see FormSpecialPage::__construct(). */
 	public function __construct() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
@@ -64,7 +67,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
 		$query = rawurldecode( $rq->getVal( NumericUrlCommon::$config->toolPageQueryParam ) );
 		NumericUrlCommon::_debugLog( 20,
-			sprintf('%s(): query=%s', __METHOD__, $query )
+			sprintf( '%s(): query=%s', __METHOD__, $query )
 		);
 		parse_str( $query, $args );
 		$this->query = array_intersect_key( $args, self::$_queryParamKeys );
@@ -73,7 +76,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	/** For parameters and semantics, see SpecialPage::execute(). */
 	public function execute( $subPage ) {
 		NumericUrlCommon::_debugLog( 20,
-			sprintf('%s("%s")', __METHOD__, $subPage)
+			sprintf( '%s("%s")', __METHOD__, $subPage)
 		);
 		if ( $subPage == '' ) {
 			if ( !NumericUrlCommon::isAllowed( 'follow', $this->getContext()->getUser() ) ) {
@@ -108,7 +111,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		$targetPrefixHtml = '';
 
 		// remove our own base URL for brevity
-		if (NumericUrlCommon::$baseUrl === substr( $target, 0, strlen( NumericUrlCommon::$baseUrl ) ) ) {
+		if ( NumericUrlCommon::$baseUrl === substr( $target, 0, strlen( NumericUrlCommon::$baseUrl ) ) ) {
 			$target = substr( $target, strlen( NumericUrlCommon::$baseUrl ) );
 			$targetPrefixHtml = '&hellip;';
 		}
@@ -207,7 +210,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		// create our submit button
 		$fields['submit'] = array(
 			'type' => 'submit',
-			'default' => wfMessage("$mp-submit")->text(),
+			'default' => wfMessage( "$mp-submit" )->text(),
 		);
 
 		if ( !$canCreate ) {
@@ -218,7 +221,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 					'type' => 'info',
 					'cssclass' => "$mp-unavailable",
 					'label-message' => "$mp-numeric",
-					'default' => wfMessage("$mp-unavailable")->text(),
+					'default' => wfMessage( "$mp-unavailable" )->text(),
 				);
 			}
 
@@ -242,15 +245,14 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	/** For parameters and semantics, see FormSpecialPage::onSuccess(). */
 	public function onSuccess() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
-		var_dump(__METHOD__); exit(3);
+		var_dump( __METHOD__ ); exit( 3 );
 	}
 
 	/** For parameters and semantics, see SpecialPage::getDescription(). */
 	public function getDescription() {
 		if ( $this->_showToolForm ) {
 			$msgid = $this->getMessagePrefix();
-		}
-		else {
+		} else {
 			return parent::getDescription();
 		}
 		return $this->msg( $msgid )->text();
@@ -322,7 +324,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		}
 
 		// add the query to the path
-		if ( count($query) ) {
+		if ( count( $query ) ) {
 			$path .= '?' . implode( '&', $query );
 		}
 
@@ -338,24 +340,6 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	private function _redirect( $out, $url, $status = 307 ) {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
 		$out->redirect( $url, $status );
-	}
-
-	/** */
-	private static function _parseUrl( $url ) {
-		$urlParts = parse_url( $url );
-		if ( !( $urlParts && !isset( $urlParts['scheme'] ) ) ) {
-			if ( substr( $url, 0, 2 ) === '//' ) {
-				$urlParts = parse_url( WebRequest::detectProtocol() . ":{$url}" );
-			}
-			if ( !( $urlParts && $urlParts['scheme'] ) ) {
-				return false;
-			}
-			unset( $urlParts['scheme'] );
-		}
-		if ( !( isset( $urlParts['host'] ) && isset( $urlParts['path'] ) ) ) {
-			return false;
-		}
-		return $urlParts;
 	}
 
 	/** */
@@ -375,10 +359,10 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		}
 
 		// validate the target URL
-		$urlParts = NumericUrlCommon::parseUrl( $this->targetUrl );
+		$urlParts = WeirdoUrl::parse( $this->targetUrl );
 		if ( !$urlParts ) {
 			NumericUrlCommon::_debugLog( 10,
-				sprintf('%s(): Invalid target URL: <%s>', __METHOD__, $this->targetUrl )
+				sprintf( '%s(): Invalid target URL: <%s>', __METHOD__, $this->targetUrl )
 			);
 			return false;
 		}
@@ -400,7 +384,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		$out->setRobotPolicy( 'noindex,nofollow' );
 
 		$this->setHeaders();
-		$out->addModuleStyles('ext.numericUrl.toolpage');
+		$out->addModuleStyles( 'ext.numericUrl.toolpage' );
 
 		$this->outputHeader( "{$this->_mp}-toolform-summary" );
 
@@ -441,7 +425,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		$out->setRobotPolicy( 'noindex,nofollow' );
 
 		global $wgSend404Code;
-		if ( ($statusCode != 404) || $wgSend404Code ) {
+		if ( ( $statusCode != 404 ) || $wgSend404Code ) {
 			$out->setStatusCode( $statusCode );
 		}
 
@@ -461,9 +445,9 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
 	/** */
 	private $_showToolForm;
-  
-  /** */
-  private static $_queryParamKeys = array( 'title'=>null, 'curid'=>null, 'oldid'=>null, 'action'=>null, 'pageid'=>null ) ;
+
+	/** */
+	private static $_queryParamKeys = array( 'title'=>null, 'curid'=>null, 'oldid'=>null, 'action'=>null, 'pageid'=>null ) ;
 
 }
 //NumericUrlSpecialPage::_initStatic();
