@@ -94,7 +94,18 @@ class NumericUrlCommon {
 	public static $_debugLogLevel = 0;
 
 	/** */
-	public static $userRightsNames;
+	public static $userRightsNames = array(
+		'follow-shared' => true,
+		'follow-global' => true,
+		'create-basic' => true,
+		'create-local' => true,
+		'create-group' => true,
+		'create-global' => true,
+		'create-notrack' => true,
+		'create-password' => true,
+		'create-noexpire' => true,
+	);
+
 
 
 	/** Constructor for class's singleton object.
@@ -181,22 +192,45 @@ class NumericUrlCommon {
 		$urlAuthority,
 		$urlMapInstance ) {
 
+		// don't do anything if iw_local has been removed from the list of regions
+		if ( !isset( self::$config->regions->iw_local ) ) {
+			return true;
+		}
+
 		self::_debugLog( 20,
 			sprintf( '%s: url=\"%s\"; authority=\"%s\"', __METHOD__ , $urlText, $urlAuthority ),
 			E_USER_WARNING );
 
 		if ( self::iwLocalInfoFromUrl( $urlText ) ) {
-			$regions['iw_local'] = array( 'description-message' => 'numericurl-region-iw-local' );
+			$regions['iw_local'] = self::$config->regions->iw_local;
 		}
 		return true;
 	}
 
+	/** */
 	public static function reverseUrlTemplate( $urlTemplate, $urlResult ) {
-		$regex = '{^' . str_replace( '%241', '(.*)', rawurlencode( $urlTemplate ) ) . '$}';
+		static $paramToRegex = array(
+			'%241' => '(?<_1>.*)',
+			'%242' => '(?<_2>.*)',
+		);
+		$regex = '{^' . strtr( rawurlencode( $urlTemplate ), $paramToRegex ) . '$}';
 		if ( !preg_match( $regex, rawurlencode( $urlResult ), $matches ) ) {
 			return false;
 		}
-		return rawurldecode( $matches[1] );
+		$result = array();
+		foreach ( $matches as $k => $v ) {
+			if ( is_string( $k ) ) {
+				$result[(int)$k[1]] = rawurldecode( $v );
+			}
+		}
+		ksort( $result );
+		return $result;
+	}
+
+	/**
+	 *
+	 */
+	public static function parseUrlForTitle() {
 	}
 
 	/**
@@ -225,16 +259,17 @@ class NumericUrlCommon {
 	}
 
 	/**
-	 * Display a link to our basic creation tool in the toolbox for certain pages.
+	 * Determine whether our tool link belongs on the current page and, if so, construct it.
 	 */
 	public static function onSkinTemplateToolboxEnd( $tpl ) {
+		$qp = self::$config->queryPrefix;
 		self::_debugLog( 20, __METHOD__ );
 
-		if ( !self::isAllowed( 'follow' ) ) {
+		$context = $tpl->getSkin()->getContext();
+
+		if ( !self::isAllowed( 'follow-shared', $context->getUser() ) ) {
 			return;
 		}
-
-		$context = $tpl->getSkin()->getContext();
 
 		$action = Action::getActionName( $context );
 
@@ -253,6 +288,11 @@ class NumericUrlCommon {
 		}
 
 		$title = $context->getTitle();
+
+		// bugbug TODO - don't allow on main page
+		// bugbug TODO - check $title->isDeleted[Quick]() ??
+		// bugbug TODO - check $title->isRedirect()
+		// bugbug TODO - if isSpecialPage(), invoke fixSpecialName()
 
 		// skip if this is our own special page
 		if ( $title->isSpecial( self::SPECIAL_PAGE_TITLE ) ) {
@@ -273,44 +313,62 @@ class NumericUrlCommon {
 		}
 
 		// pass the current query parameters to the tool, if invoked
-		$subPath = array();
+		$query = array();
 
-		$urlTitle = $title->getPrefixedUrl();
-		if ( $urlTitle ) {
-			// see if the configuration rules out this title
-			if ( self::$config->reTitlesWithToolLink ) {
-				if ( !preg_match( self::$config->reTitlesWithToolLink, $urlTitle ) ) {
-					self::_debugLog( 20, __METHOD__ . ': did not match reTitlesWithToolLink' );
-					return;
-				}
+		// see if the configuration regexes rule out this title
+		$urlTitle = (string)$title->getPrefixedUrl();
+		if ( self::$config->reTitlesWithToolLink ) {
+			if ( !preg_match( self::$config->reTitlesWithToolLink, $urlTitle ) ) {
+				self::_debugLog( 20, __METHOD__ . ': did not match reTitlesWithToolLink' );
+				return;
 			}
-			if ( self::$config->reTitlesWithoutToolLink ) {
-				if ( preg_match( self::$config->reTitlesWithoutToolLink, $urlTitle ) ) {
-					self::_debugLog( 20, __METHOD__ . ': matched reTitlesWithoutToolLink' );
-					return;
-				}
+		}
+		if ( self::$config->reTitlesWithoutToolLink ) {
+			if ( preg_match( self::$config->reTitlesWithoutToolLink, $urlTitle ) ) {
+				self::_debugLog( 20, __METHOD__ . ': matched reTitlesWithoutToolLink' );
+				return;
 			}
-			$subPath[] = 'title=' . rawurlencode( $urlTitle );
-			self::_debugLog( 30,
-				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $subPath ) )
-			);
 		}
 
-		$url = new NumericUrlMapInstance( $title->getFullUrl( '', false, PROTO_RELATIVE ) );
-		self::_debugLog( 30,
-			sprintf( '%s():%u: url=%s; regions=(%s)', __METHOD__, __LINE__,
-				rawurlencode( $url ),
-				implode( ',', array_keys( $url->getRegions() ) )
+		$context->getRequest()->unsetVal( 'title' ); // remove redundant query parameter
+		$urlMapInstance = new NumericUrlMapInstance(
+			$title->getFullUrl(
+				wfArrayToCgi( $context->getRequest()->getValues() ),
+				false,
+				PROTO_RELATIVE
 				)
 		);
-		$subPath[] = "url=" . rawurlencode( $url );
+		// see if any hooks want to suppress the toolbox link
+		if ( Hooks::isRegistered( 'NumericUrlToolboxCheck' ) ) {
+			$disable = false;
+			wfRunHooks(
+				'NumericUrlToolboxCheck',
+				array(
+					&$disable,
+					$title,
+					$urlMapInstance,
+				)
+			);
+
+			self::_debugLog( 30,
+				sprintf( '%s():%u: url=%s; regions=(%s)', __METHOD__, __LINE__,
+					wfUrlencode( $urlMapInstance ),
+					implode( ',', array_keys( $urlMapInstance->getRegions() ) )
+					)
+			);
+			if ( $disable ) {
+				return;
+			}
+		}
+
+		$query[] = "{$qp}url=" . wfUrlencode( $urlMapInstance );
 
 		// pass the specific page ID and/or revision, if specified
 		$articleId = $title->getArticleID();
 		if ( $articleId ) {
-			$subPath[] = "pageid=$articleId";
+			$query[] = "{$qp}pageid=$articleId";
 			self::_debugLog( 30,
-				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $subPath ) )
+				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
 			);
 			// oldid is for persistent URLs to specific revisions of pages
 			$oldid = Article::newFromID( $articleId )->getOldID();
@@ -320,9 +378,9 @@ class NumericUrlCommon {
 					self::_debugLog( 20, __METHOD__ . ': not configured for display on specific revisions' );
 					return;
 				}
-				$subPath[] = "oldid=$oldid";
+				$query[] = "{$qp}oldid=$oldid";
 				self::_debugLog( 30,
-					sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $subPath ) )
+					sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
 				);
 			} else {
 				// curid is for persistent URLs to latest revisions of pages before
@@ -334,29 +392,35 @@ class NumericUrlCommon {
 						self::_debugLog( 20, __METHOD__ . ': not configured for display on page-ID pages' );
 						return;
 					}
-					$subPath[] = "curid=$curid";
+					$query[] = "${qp}curid=$curid";
+					$sendTitle = true;
 					self::_debugLog( 30,
-						sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $subPath ) )
+						sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
 					);
 				}
+			}
+			if ( $urlTitle ) {
+				$query[] = "{$qp}title=" . wfUrlencode( $urlTitle );
+				self::_debugLog( 30,
+					sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
+				);
 			}
 		}
 
 		// pass the action if it's not "view"
 		if ( $action !== 'view' ) {
-			$subPath[] = "action=$action";
+			$query[] = "{$qp}action=$action";
 			self::_debugLog( 30,
-				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $subPath ) )
+				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
 			);
 		}
 
 		// output the menu item link
-		if ( count( $subPath ) ) {
+		if ( count( $query ) ) {
 			echo Html::rawElement( 'li', array( 'id' => 't-numericurl' ),
 				Html::Element( 'a',
 					array(
-						'href' => self::$_path . '?'
-							. self::$config->toolPageQueryParam . '=' . rawurlencode( implode( '&', $subPath ) ),
+						'href' => self::$_path . '?' . implode( '&', $query ),
 						'title' => wfMessage( 'numericurl-toolbox-title' )->text(),
 						),
 					wfMessage( 'numericurl-toolbox-text' )->text()
@@ -404,8 +468,8 @@ class NumericUrlCommon {
 		}
 		$iwLocalUrlsCache[$fullUrl] = false;
 		foreach ( $iwLocalPrefixesCache as $k => $prefix ) {
-			$title = self::reverseUrlTemplate( $prefix['iw_url'], $fullUrl );
-			if ( $title ) {
+			$tplParams = self::reverseUrlTemplate( $prefix['iw_url'], $fullUrl );
+			if ( $tplParams ) {
 				if ( $k !== 0 ) {
 					// keep $iwLocalPrefixesCache in MRU order
 					unset( $iwLocalPrefixesCache[$k] );
@@ -413,12 +477,51 @@ class NumericUrlCommon {
 				}
 				$iwLocalUrlsCache[$fullUrl] = array(
 					'interwiki' => $prefix,
-					'title' => $title,
+					'title' => $tplParams[1],
 				);
 				break;
 			}
 		}
 		return $iwLocalUrlsCache[$fullUrl];
+	}
+
+	/** */
+	public static function titleFromLocalUrl( $localUrl ) {
+		$title = null;
+		if ( $localUrl->isLocal() ) {
+			$id = $localUrl->getQueryValue('oldid');
+			if ( !$id ) {
+				$id = $localUrl->getQueryValue('curid');
+				if ( !$id ) {
+					$id = $localUrl->getQueryValue('pageid');
+				}
+			}
+			if ( $id ) {
+				$title = Title::newFromID( $id );
+			}
+			if ( !$title ) {
+				$titleText = $localUrl->getQueryValue('title');
+				if ( !$titleText ) {
+					$parsed = $localUrl->getParsed();
+					global $wgArticlePath;
+					$urlParams = NumericUrlCommon::reverseUrlTemplate(
+						$wgArticlePath,
+						$parsed['path']
+					);
+					if ( isset( $urlParams[1] ) ) {
+						$titleText = $urlParams[1];
+					}
+				}
+				// if there's a title in the URL, confirm that it exists on this wiki
+				if ( $titleText ) {
+					$title = Title::newFromText( $titleText );
+					if ( $title && !$title->isKnown() ) {
+						$title = null;
+					}
+				}
+			}
+		}
+		return $title;
 	}
 
 	/** */
@@ -461,10 +564,18 @@ class NumericUrlCommon {
 			self::$_debugLogGroup = 'extension_' . self::EXTENSION_NAME;
 
 			self::$baseUrl = WebRequest::detectServer();
-			self::$baseUrlParts = WeirdoUrl::parse( self::$baseUrl );
+			self::$baseUrlParts = NumericUrlBasicUrl::parse( self::$baseUrl );
 
-			// flip the user rights array for key access
-			self::$userRightsNames = array_flip( self::$_userRightsNamesFlipped );
+			foreach ( self::$config->regions as $k => $v ) {
+				if ( !preg_match( '/^[a-z][a-z0-9_]*$/', $k ) ) {
+					trigger_error(
+						sprintf( '%s: discarding invalid region ID: "%s"', __METHOD__ , $k ),
+						E_USER_WARNING );
+					continue;
+				}
+				self::$userRightsNames["follow-region-$k"] = true;
+				self::$userRightsNames["create-region-$k"] = true;
+			}
 
 		} else {
 			throw new WMException( 'Error: Attempt to invoke private method ' . __METHOD__ . '().' );
@@ -481,17 +592,6 @@ class NumericUrlCommon {
 	private static $_debugLogGroup;
 
 	/** */
-	private static $_userRightsNamesFlipped = array(
-		'follow',
-		'create-basic',
-		'create-group',
-		'create-global',
-		'create-notrack',
-		'create-password',
-		'create-noexpire',
-	);
-
-	/** */
 	private static $_defaultUser;
 
 	/** Singleton object to this (otherwise static) class */
@@ -499,6 +599,9 @@ class NumericUrlCommon {
 
 	/** Flag that indicates singleton has been instantiated */
 	private static $_singleton;
+
+	/** */
+	private static $_articlePath;
 
 }
 // Once-only static initialization

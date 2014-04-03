@@ -43,6 +43,7 @@ define( 'MW_EXT_NUMERICURL_NAME',            'NumericUrl' );
 define( 'MW_EXT_NUMERICURL_NAME_LC',         strtolower( MW_EXT_NUMERICURL_NAME ) );
 define( 'MW_EXT_NUMERICURL_VERSION',         '1.0.0' );
 define( 'MW_EXT_NUMERICURL_AUTHOR',          'Daniel Norton' );
+define( 'MW_EXT_NUMERICURL_QUERY_PREFIX',    'nu' );
 
 define( 'MW_EXT_NUMERICURL_API_PARAM_NAME',   MW_EXT_NUMERICURL_NAME_LC );
 define( 'MW_EXT_NUMERICURL_API_MID',         'nu' );
@@ -129,11 +130,25 @@ if ( !isset( $wgNumericUrl['pageIdToolLink'] ) ) {
 	$wgNumericUrl['pageIdToolLink'] = true;
 }
 
-// query parameter name for the tool page
-if ( !isset( $wgNumericUrl['toolPageQueryParam'] ) ) {
-	$wgNumericUrl['toolPageQueryParam'] = 'nuq';
+// Long URL permission regions
+// The names in these keys must be granted permissions in $wgGroupPermissions.
+if ( !isset( $wgNumericUrl['regions'] ) ) {
+	$wgNumericUrl['regions'] = array(
+		'iw_local' => array(    // Local Interwikis
+			'description-message' => 'numericurl-region-iw_local',
+		),
+	);
 }
 
+
+if ( !isset( $wgNumericUrl['queryParams'] ) ) {
+	$wgNumericUrl['queryParams'] = array();
+}
+
+// query parameter name prefix
+if ( !isset( $wgNumericUrl['queryPrefix'] ) ) {
+	$wgNumericUrl['queryPrefix'] = MW_EXT_NUMERICURL_QUERY_PREFIX;
+}
 if ( !isset( $wgNumericUrl['api'] ) ) {
 	$wgNumericUrl['api'] = array();
 }
@@ -154,7 +169,7 @@ global
 $wgExtensionCredits['api'][] = array(
 	'path'         => __DIR__ . '/' . MW_EXT_NUMERICURL_NAME,
 	'name'         => MW_EXT_NUMERICURL_NAME,
-	'description'  => 'Provide numeric URLs of various radixes.',
+	'description'  => 'Provide numeric URLs to represent long URLs.',
 	'version'      => MW_EXT_NUMERICURL_VERSION,
 	'author'       => MW_EXT_NUMERICURL_AUTHOR,
 	'license-name' => '[http://www.gnu.org/licenses/gpl-3.0.txt GPL v3]',
@@ -170,8 +185,8 @@ $wgAutoloadClasses['NumericUrlCommon'] = __DIR__ . '/NumericUrlCommon.php';
 // Hook special redirection paths
 Hooks::register( 'WebRequestPathInfoRouter', 'NumericUrlCommon::onWebRequestPathInfoRouter' );
 
-// Our own hook, to report domain regions
-Hooks::register( 'NumericUrlRegionCheck', 'NumericUrlCommon::onNumericUrlRegionCheck' );
+// Hook our own event, to report built-in URL regions
+Hooks::register( 'NumericUrlGlobalRegionCheck', 'NumericUrlCommon::onNumericUrlGlobalRegionCheck' );
 
 // Hook toolbox link
 Hooks::register( 'SkinTemplateToolboxEnd', 'NumericUrlCommon::onSkinTemplateToolboxEnd' );
@@ -201,29 +216,46 @@ $wgResourceModules['ext.numericUrl.toolpage'] = array(
 
 // default permissions are last
 
-// 'follow' might as well be true if anonymous redirectors are employed
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-follow'] = true;
+// 'follow-shared' might as well be true if anonymous redirectors are employed
+$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-follow-shared'] = true;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-local'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-region-iw-local'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-global'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-short'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-medium'] = false;
+$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-slashes'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-private'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-relay-query'] = false;
 $wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-expire-never'] = false;
 
+$wgGroupPermissions['user'][MW_EXT_NUMERICURL_NAME_LC . '-follow-shared'] = true;
+
+$wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . '-follow-shared'] = true;
 $wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = true;
 
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-follow'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-follow-shared'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-local'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-region-iw-local'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-global'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-short'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-medium'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-slashes'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-private'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-relay-query'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-expire-never'] = true;
+
+// set default region permissions: deny default, allow sysop
+$wgNumericUrl['fn'] = function( &$wgNumericUrl, &$wgGroupPermissions ) {
+	foreach ( $wgNumericUrl['regions'] as $region ) {
+		foreach ( array( 'follow', 'create' ) as $perm ) {
+			$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . "-$perm-region-$region"] = false;
+			$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . "-$perm-region-$region"] = true;
+		}
+	}
+};
+$wgNumericUrl['fn']($wgNumericUrl, $wgGroupPermissions);
+unset($wgNumericUrl['fn']);
+
+$wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . "-follow-region-iw_local"] = true;
 
 /** @}*/

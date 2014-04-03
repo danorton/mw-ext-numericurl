@@ -26,15 +26,37 @@
  *
  */
 
-.numericurl-toolform-target .mw-input {
-  font-family: monospace;
-  font-size: 125%;
+#numericurl-toolform_toolform {
+	min-width: 40em;
+	width: 100%;
+}
+
+tr.numericurl-toolform > td {
+	vertical-align: baseline;
+}
+
+tr.numericurl-toolform > td.mw-label {
+	width: 8em;
+}
+
+.numericurl-toolform-nodisplay {
+	display: none;
+}
+
+input.numericurl-toolform-target {
+	font-family: monospace;
+	font-size: 125%;
+	width: 100%;
+}
+
+input.numericurl-toolform-input-readonly {
+	border: none;
 }
 
 .numericurl-toolform-target-title .mw-input {
-  font-weight: bold;
+	font-weight: bold;
 }
 
 .numericurl-toolform-unavailable .mw-input {
-  font-style: italic;
+	font-style: italic;
 }

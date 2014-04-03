@@ -38,12 +38,6 @@ if ( !defined( 'MW_EXT_NUMERICURL_NAME' ) ) {
 class NumericUrlSpecialPage extends FormSpecialPage {
 
 	/** */
-	public $query;
-
-	/** */
-	public $revision;
-
-	/** */
 	public $targetUrl;
 
 	/** */
@@ -55,22 +49,24 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	/** */
 	public $scheme;
 
-	/** URL map instance. */
-	public $mapInstance;
-
-	/** For parameters and semantics, see FormSpecialPage::__construct(). */
+	/** For parameters and semantics, see FormSpecialPage::__construct().
+	 *
+	 * There's a very good chance that our page will not be displayed after construction,
+	 * so we shouldn't waste much time here. Most notably, Special:SpecialPages creates
+	 * an instance of *each* special page object simply to determine which ones are
+	 * available to the current user, invoking isListed(), isRestricted() and userCanExecute().
+	 * (If the page is available to the current user, Special:SpecialPages then invokes
+	 * a few other property getters.)
+	 */
 	public function __construct() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
-		parent::__construct( NumericUrlCommon::SPECIAL_PAGE_TITLE );
-		$this->_mp = parent::getMessagePrefix();
-		$rq = $this->getRequest();
-
-		$query = rawurldecode( $rq->getVal( NumericUrlCommon::$config->toolPageQueryParam ) );
-		NumericUrlCommon::_debugLog( 20,
-			sprintf( '%s(): query=%s', __METHOD__, $query )
+		parent::__construct(
+			NumericUrlCommon::SPECIAL_PAGE_TITLE,
+			NumericUrlCommon::getFullUserRightsName( 'follow-shared' )
 		);
-		parse_str( $query, $args );
-		$this->query = array_intersect_key( $args, self::$_queryParamKeys );
+		$this->_mp = parent::getMessagePrefix();
+		$this->_rq = $this->getRequest();
+		$this->_query = $this->_rq->getValues();
 	}
 
 	/** For parameters and semantics, see SpecialPage::execute(). */
@@ -78,19 +74,34 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		NumericUrlCommon::_debugLog( 20,
 			sprintf( '%s("%s")', __METHOD__, $subPage)
 		);
-		if ( $subPage == '' ) {
-			if ( !NumericUrlCommon::isAllowed( 'follow', $this->getContext()->getUser() ) ) {
-				throw new PermissionsError( NumericUrlCommon::getFullUserRightsName( 'follow' ) );
-			}
+		$this->setHeaders();
+		$this->checkPermissions();
 
+		// If the Wiki is in read-only mode, only allow GET
+		if ( ( $this->getRequest()->getMethod() !== 'GET' ) && wfReadOnly() ) {
+			throw new ReadOnlyError;
+		}
+
+		if ( $subPage == '' ) {
 			if ( !$this->_isValidToolPageRequest() ) {
-				return $this->_unknownToolPageRequest() ;
+				$this->_unknownToolPageRequest() ;
+				return;
 			}
 			$this->_toolPage();
 
 		} else {
-			return $this->_noSuchPage();
+			$this->_noSuchPage();
 		}
+
+	}
+
+	/**
+	 * For basic parameters and semantics, see SpecialPage::checkReadOnly.
+	 *
+	 * We nullify this method and manage read-only mode separately, depending on the
+	 * user and the request.
+	 */
+	public function checkReadOnly() {
 	}
 
 	/** For parameters and semantics, see FormSpecialPage::getFormFields(). */
@@ -99,74 +110,77 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
 		$context = $this->getContext();
 		$user = $context->getUser();
-		$hasCreateRights = NumericUrlCommon::isAllowed(
-			array( 'create-basic', 'follow' ),
-			$user );
-		$canCreate = $hasCreateRights && !$this->numericUrlPath;
 
-		$mp = "{$this->_mp}-toolform";
+		$hasBasicCreateRights    = NumericUrlCommon::isAllowed( array( 'create-basic' ), $user );
+		$hasNonBasicCreateRights = NumericUrlCommon::isAllowed( array( 'create-local' ), $user );
+
+		$canSubmitThis = $this->_mapInstance->isBasic() && $hasBasicCreateRights;
+
+		$mp = $this->getMessagePrefix();
 		$fields = array();
 
-		$target = $this->targetUrl;
-		$targetPrefixHtml = '';
-
-		// remove our own base URL for brevity
-		if ( NumericUrlCommon::$baseUrl === substr( $target, 0, strlen( NumericUrlCommon::$baseUrl ) ) ) {
-			$target = substr( $target, strlen( NumericUrlCommon::$baseUrl ) );
-			$targetPrefixHtml = '&hellip;';
+		$target = $this->_mapInstance->getText();
+		if ( $this->_mapInstance->isLocal() ) {
+			$target = $this->_mapInstance->getLocalText();
 		}
 
-		if ( isset( $this->title ) ) {
-			$htmlTitle = htmlspecialchars( $this->title->getPrefixedText() );
-			// only hyperlink the title if this is for the latest revision of the title
-			if ( $canCreate && !( isset( $this->query['curid'] ) || $this->revision ) ) {
-				$htmlTitle = Html::rawElement( 'a', array( 'href' => $target ), $htmlTitle );
+		// display the title, if we have one
+		if ( $this->_localTitle ) {
+			$htmlTitle = htmlspecialchars( $this->_localTitle->getPrefixedText() );
+			// only hyperlink the title if this URL tracks the current-latest revision of the title
+			if ( !( $this->_getVal( 'curid' ) || $this->_getVal( 'oldid' ) ) ) {
+				$htmlTitle = Html::rawElement(
+					'a',
+					array(
+						'href' => $target,
+						'target' => '_blank',
+						'title' => wfMessage( "$mp-target-title-link-title" )->text(),
+					),
+					$htmlTitle );
 			}
 			$fields['target-title'] = array(
 				'type' => 'info',
 				'cssclass' => "$mp-target-title",
-				'label-message' => "$mp-target-title",
+				'label-message' => "$mp-target-title-label",
 				'raw' => true,
 				'default' => $htmlTitle,
 			);
 
-			if ( $this->revision ) {
-				$htmlTimestamp = $context->getLanguage()->userTimeAndDate( $this->revision->getTimestamp(), $user );
-				if( $canCreate ) {
-					$htmlTimestamp = Html::rawElement( 'a', array( 'href' => $target ), $htmlTimestamp );
+			// display the revision timestamp if this link represents a specific revision
+			if ( $this->_mapInstance->getQueryValue('oldid') ) {
+				$revision = Revision::newFromTitle( $this->_localTitle, $this->_mapInstance->getQueryValue('oldid') );
+				//var_dump($revision); exit(3);
+				if ( $revision ) {
+					$htmlTimestamp = $context->getLanguage()->userTimeAndDate( $revision->getTimestamp(), $user );
+					if( $hasNonBasicCreateRights ) {
+						$htmlTimestamp = Html::rawElement( 'a', array( 'href' => $target ), $htmlTimestamp );
+					}
+					$fields['oldid'] = array(
+						'type' => 'info',
+						'label-message' => "$mp-oldid",
+						'raw' => true,
+						'default' => $htmlTimestamp,
+					);
 				}
-				$fields['oldid'] = array(
-					'type' => 'info',
-					'label-message' => "$mp-oldid",
-					'raw' => true,
-					'default' => $htmlTimestamp,
-				);
-			} elseif ( isset( $this->query['curid'] ) ) {
+			} elseif ( ( $this->_getVal( 'curid' ) !== null ) ) {
 				$fields['curid'] = array(
 					'type' => 'info',
 					'label-message' => "$mp-curid",
-					'default' => $this->query['curid'],
+					'default' => $this->_getVal( 'curid' ),
 				);
 			}
 		}
 
-		$htmlTarget = $targetPrefixHtml . htmlspecialchars( $target ) ;
-		if( $canCreate ) {
-				$htmlTarget = Html::rawElement( 'a',
-					array(
-						'href' => ( $canCreate ? $target : false ),
-						'title' => $this->targetUrl,
-					),
-					$htmlTarget
-				);
-		}
+		$htmlTarget = htmlspecialchars( $target ) ;
+		// If the user can't create non-basic URLs, just display the URL text
 		$fields['target'] = array(
-			'type' => 'info',
-			'cssclass' => "$mp-target",
+			'type' => 'text',
+			'cssclass' => "$mp $mp-target" . ( $hasNonBasicCreateRights ? '' : " $mp-input-readonly" ),
 			'label-message' => "$mp-target",
-			'title' => $this->targetUrl,
+			'title' => "{$this->_mapInstance}",
 			'raw' => true,
-			'default' => $htmlTarget,
+			'readonly' => !$hasNonBasicCreateRights,
+			'default' => $target,
 		);
 
 		// display scheme selection if our host isn't scheme-specific
@@ -209,12 +223,13 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
 		// create our submit button
 		$fields['submit'] = array(
+			//'cssclass' => "$mp-nodisplay",
 			'type' => 'submit',
 			'default' => wfMessage( "$mp-submit" )->text(),
 		);
 
-		if ( !$canCreate ) {
-			if ( ( !$this->numericUrlPath ) || ( !NumericUrlCommon::isAllowed( 'follow', $user ) ) ) {
+		if ( !$hasNonBasicCreateRights ) {
+			if ( ( !$this->numericUrlPath ) || ( !NumericUrlCommon::isAllowed( 'follow-shared', $user ) ) ) {
 				// We lack rights to create it or it exists, but we aren't allowed to see it
 				// Simply report that the numeric URL is not available.
 				$fields['unavailable'] = array(
@@ -227,8 +242,11 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
 			// Disable the submit button if we can't create the numeric URL
 			$fields['submit']['disabled'] = true;
+			//$fields['submit']['cssclass'] .= "$mp-nodisplay";
 
 		}
+		$fields['submit']['disabled'] = !$canSubmitThis;
+
 		if ( !count( $fields['unavailable'] ) ) {
 			unset( $fields['unavailable'] );
 		}
@@ -269,71 +287,28 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
 	/** For parameters and semantics, see FormSpecialPage::alterForm(). */
 	protected function alterForm( HTMLForm $form ) {
-		$form->addHiddenField( NumericUrlCommon::$config->toolPageQueryParam, wfArrayToCgi( $this->query ) );
-	}
-
-	private function _getTitle() {
-		if ( ( !$this->titleObject ) && $this->query['title'] ) {
-			$this->titleObject = Title::newFromText( $this->query['title'] );
+		NumericUrlCommon::_debugLog( 20, __METHOD__ );
+		if ( $this->_getVal( 'title' ) && ( $this->_getVal( 'curid' ) || $this->_getVal( 'oldid' ) ) ) {
+			$form->addHiddenField( NumericUrlCommon::$config->queryPrefix . 'title', $this->_getVal( 'title' ) );
 		}
-		return $this->titleObject;
 	}
 
 	/** */
-	private function _buildTarget() {
+	private function _unsetVal( $key ) {
+		return $this->_rq->unsetVal( NumericUrlCommon::$config->queryPrefix . $name );
+	}
 
-		// We require the title text, at the very least
-		// (This avoids problems with stale links if the title changes.)
-		if ( !isset( $this->query['title'] ) ) {
-			return;
+	/** */
+	private function _getVal( $name, $default = null ) {
+		return $this->_rq->getVal( NumericUrlCommon::$config->queryPrefix . $name, $default );
+	}
+
+	/** */
+	private function _getTitle() {
+		if ( ( !$this->titleObject ) && $this->_getVal( 'title' ) ) {
+			$this->titleObject = Title::newFromText( $this->_getVal( 'title' ) );
 		}
-
-		// Fetch the title object for the given title text
-		$this->title = Title::newFromText( $this->query['title'] );
-		if ( !$this->title ) {
-			return;
-		}
-
-		$query = array();
-
-		// If it's an old revision or a page ID, we have to path through index.php
-		if ( isset( $this->query['curid'] ) || isset( $this->query['oldid'] ) ) {
-			if ( isset( $this->query['oldid'] ) ) {
-				unset( $this->query['curid'] );
-				$this->revision = Revision::newFromTitle( $this->title, $this->query['oldid'] );
-				$query[] = "oldid={$this->query['oldid']}";
-			} else {
-				// curid must match the title's article ID
-		    if ( $this->query['curid'] != $this->title->getArticleID() ) {
-					return;
-				}
-				$query[] = "curid={$this->query['curid']}";
-			}
-			global $wgScript;
-			$path = $wgScript;
-		} else {
-			// This is the URL for the latest revision of the article of the specified title
-			$this->revision = null;
-			global $wgArticlePath;
-			$path = str_replace( '$1', $this->query['title'], $wgArticlePath );
-		}
-
-		// add the action
-		if ( isset( $this->query['action'] ) ) {
-			$query[] = "action={$this->query['action']}";
-		}
-
-		// add the query to the path
-		if ( count( $query ) ) {
-			$path .= '?' . implode( '&', $query );
-		}
-
-		// set the scheme
-		$this->scheme = NumericUrlCommon::$baseScheme;
-
-		// set the redirection target
-		$this->targetUrl = NumericUrlCommon::$baseUrl . $path ;
-
+		return $this->titleObject;
 	}
 
 	/** */
@@ -342,37 +317,46 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		$out->redirect( $url, $status );
 	}
 
-	/** */
+	private function _parseTarget() {
+		$curid = $this->_getInt( 'curid' );
+		$title = $this->_getVal( 'title' );
+		$action = $this->_getVal( 'action', 'view' );
+
+		if ( $this->_getCheck( 'search' ) ) {
+			$ret = SpecialPage::getTitleFor( 'Search' );
+		}
+	}
+
+	/**
+	 * Validate tool page request.
+	 *
+	 * Simply validate the request syntax. The URL in the request isn't necessarily valid.
+	 */
 	private function _isValidToolPageRequest() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
 
-		if ( !count( $this->query ) ) {
+		if ( !count( $this->_query ) ) {
 			// an empty query is A-OK
 			return true;
 		}
 
-		if ( !$this->targetUrl ) {
-			$this->_buildTarget();
-			if ( !$this->targetUrl ) {
-				return false;
-			}
-		}
+		$this->_mapInstance = false;
 
-		// validate the target URL
-		$urlParts = WeirdoUrl::parse( $this->targetUrl );
-		if ( !$urlParts ) {
-			NumericUrlCommon::_debugLog( 10,
-				sprintf( '%s(): Invalid target URL: <%s>', __METHOD__, $this->targetUrl )
-			);
+		// if it's not empty, it must have a url parameter
+		$targetUrl = $this->_getVal( 'url' );
+		if ( $targetUrl === null ) {
+			// no URL at all
 			return false;
 		}
 
-		// bugbug actually look it up
-		$this->numericUrlPath = null;
+		$this->_mapInstance = new NumericUrlMapInstance( $targetUrl );
 
 		return true;
 	}
 
+	/**
+	 * Try to get the title that's associated with the the local URL.
+	 */
 	/** */
 	private function _toolPage() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
@@ -380,40 +364,46 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		$this->_showToolForm = true;
 
 		$out = $this->getOutput();
-		$out->setArticleRelated( false ); // bugbug: set accordingly
 		$out->setRobotPolicy( 'noindex,nofollow' );
 
-		$this->setHeaders();
+		//$this->setHeaders();
 		$out->addModuleStyles( 'ext.numericUrl.toolpage' );
 
-		$this->outputHeader( "{$this->_mp}-toolform-summary" );
+		$this->outputHeader( $this->getMessagePrefix() . "-summary" );
 
-
+		// fetch a title for local URLs
+		if ( $this->_mapInstance ) {
+			$this->_localTitle = $this->_mapInstance->getTitle();
+		} else {
+			$this->_localTitle = null;
+		}
 		$form = $this->getForm();
+		$form->setTableId( $mp = $this->getMessagePrefix() . '_toolform' );
 		// we manage our own submit button
 		$form->suppressDefaultSubmit();
 
 		if ( $form->show() ) {
 			$this->onSuccess();
 		}
-
 	}
 
 	/** */
 	private function _noSuchPage() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
+		$mp = $this->getMessagePrefix();
 		$this->_prepareErrorPage()->showErrorPage(
-			"{$this->_mp}-nosuchpage",
-			"{$this->_mp}-nosuchpagetext"
+			"$mp-nosuchpage",
+			"$mp-nosuchpagetext"
 		);
 	}
 
 	/** */
 	private function _unknownToolPageRequest() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
+		$mp = $this->getMessagePrefix();
 		$this->_prepareErrorPage()->showErrorPage(
-			"{$this->_mp}-unknownquerypage",
-			"{$this->_mp}-unknownquerypagetext"
+			"$mp-unknownquerypage",
+			"$mp-unknownquerypagetext"
 		);
 	}
 
@@ -443,8 +433,20 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	/** i18n message prefix */
 	private $_mp;
 
+	/** WebRequest */
+	private $_rq;
+
 	/** */
 	private $_showToolForm;
+
+	/** */
+	private $_localTitle;
+
+	/** URL map instance. */
+	private $_mapInstance;
+
+	/** */
+	public $_query;
 
 	/** */
 	private static $_queryParamKeys = array( 'title'=>null, 'curid'=>null, 'oldid'=>null, 'action'=>null, 'pageid'=>null ) ;

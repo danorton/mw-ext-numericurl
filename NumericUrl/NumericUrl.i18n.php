@@ -65,16 +65,17 @@ $messages['en'] = array(
 'numericurl-toolform-revision'=> 'Specific revision',
 'numericurl-toolform-oldid'   => 'Revision:',
 'numericurl-toolform-curid'   => 'Page ID:',
-'numericurl-toolform-target-title' => 'Page title:',
+'numericurl-toolform-target-title-label' => 'Page title:',
+'numericurl-toolform-target-title-link-title' => 'Open this page in a new window.',
 'numericurl-toolform-target'  => 'Long URL:',
 'numericurl-toolform-submit'  => 'Make numeric',
 'numericurl-toolform-expiry'  => 'Expiration:',
 'numericurl-toolform-numeric' => 'Numeric URL:',
 'numericurl-toolform-unavailable' => 'A numeric URL is not available for this long URL.',
 
-'numericurl-region-iw-local'  => 'Local Interwikis',
+'numericurl-region-iw_local'  => 'Local Interwikis',
 
-'action-numericurl-follow'       => 'view numeric URLs',
+'action-numericurl-follow-shared' => 'view numeric URLs',
 'action-numericurl-create-basic' => 'create basic numeric URLs',
 
 ) ;
