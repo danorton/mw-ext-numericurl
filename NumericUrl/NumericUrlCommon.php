@@ -429,6 +429,12 @@ class NumericUrlCommon {
 		}
 	}
 
+	public static function onLoadExtensionSchemaUpdates( DatabaseUpdater $updater ) {
+		self::_debugLog( 10, __METHOD__ );
+		$updater->addExtensionTable( 'numericurlmap', __DIR__ . '/numericurlmap.sql' );
+		return true;
+	}
+
 	/** */
 	public static function _debugLog( $debugLevel, $msg ) {
 		global $wgDebugLogGroups;

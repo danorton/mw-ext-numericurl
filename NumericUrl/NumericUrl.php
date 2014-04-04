@@ -214,6 +214,8 @@ $wgResourceModules['ext.numericUrl.toolpage'] = array(
 	'localBasePath' => __DIR__,
 );
 
+$wgHooks['LoadExtensionSchemaUpdates'][] = 'NumericUrlCommon::onLoadExtensionSchemaUpdates';
+
 // default permissions are last
 
 // 'follow-shared' might as well be true if anonymous redirectors are employed
