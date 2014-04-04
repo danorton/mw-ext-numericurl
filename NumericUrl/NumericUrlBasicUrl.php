@@ -10,9 +10,24 @@ require_once "{$GLOBALS['IP']}/extensions/Weirdo/Weirdo.php";
 class NumericUrlBasicUrl extends WeirdoUrl {
 
 	/** */
+	public static function newFromUrl( $url ) {
+		return new self( $url );
+	}
+
+	/** */
+	public static function newFromParsed( $parsed ) {
+		return new self( $parsed );
+	}
+
+	/** */
 	public function __construct( $urlOrParts = null ) {
 		parent::__construct( $urlOrParts );
 
+	}
+
+	/** */
+	public function init( $urlOrParts ) {
+		parent::init( $urlOrParts );
 		global $wgServer;
 		$this->_queryInputSeparators = '&';
 	}
