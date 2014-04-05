@@ -75,7 +75,7 @@ $messages['en'] = array(
 
 'numericurl-region-iw_local'  => 'Local Interwikis',
 
-'action-numericurl-follow-shared' => 'view numeric URLs',
+'action-numericurl-view-shared' => 'view numeric URLs',
 'action-numericurl-create-basic' => 'create basic numeric URLs',
 
 ) ;

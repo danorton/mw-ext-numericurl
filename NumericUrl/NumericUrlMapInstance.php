@@ -10,6 +10,26 @@ require_once __DIR__ . '/NumericUrlBasicUrl.php';
 class NumericUrlMapInstance extends NumericUrlBasicUrl {
 
 	/** */
+	public function __construct( $urlOrParts = null ) {
+		parent::__construct( $urlOrParts );
+	}
+
+  /** */
+	public function init( $urlOrParts ) {
+		parent::init( $urlOrParts );
+
+		global $wgServer;
+		self::$_localServer = new NumericUrlBasicUrl( $wgServer );
+		$serverParsed = self::$_localServer->getParsed();
+		self::$_localServerScheme = isset( $serverParsed['scheme'] ) ? $serverParsed['scheme'] : null;
+	}
+
+	/** */
+	public function __clone() {
+		// placeholder (so far, clone works fine without doing anything here)
+	}
+
+	/** */
 	public static function newFromUrl( $url ) {
 		return new self( $url );
 	}
@@ -26,26 +46,6 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 	}
 
 	/** */
-	public function __construct( $urlOrParts = null ) {
-		parent::__construct( $urlOrParts );
-	}
-
-	public function init( $urlOrParts ) {
-		parent::init( $urlOrParts );
-
-		global $wgServer;
-		self::$_localServer = new NumericUrlBasicUrl( $wgServer ) ;
-		$serverParsed = self::$_localServer->getParsed();
-		self::$_localServerScheme = isset( $serverParsed['scheme'] ) ? $serverParsed['scheme'] : null;
-
-	}
-
-	/** */
-	public function __clone() {
-		// placeholder (so far, clone works fine without doing anything here)
-	}
-
-	/** */
 	public function isValid() {
 		if ( $this->_isValid !== null ) {
 			return $this->_isValid;
@@ -54,15 +54,15 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 		if ( !$this->getValidity() ) {
 			return false;
 		}
-		// $this->_parsed is defined at this point
+		$parsed = $this->getParsed();
 
 		// we don't allow URLs with passwords
-		if ( isset( $this->_parsed['pass'] ) ) {
+		if ( isset( $parsed['pass'] ) && !NumericUrlCommon::$config->allowPasswordInUrl ) {
 			return false;
 		}
 
-		// The path must exist and be absolute
-		if ( ( !isset( $this->_parsed['path'][0] ) ) || ( $this->_parsed['path'][0] !== '/' ) ) {
+		// The path must exist and must be absolute
+		if ( ( !isset( $parsed['path'][0] ) ) || ( $parsed['path'][0] !== '/' ) ) {
 			return false;
 		}
 
@@ -74,7 +74,7 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 				array(
 					&$isValid,
 					$this->getText(),
-					$this->_parsed,
+					$parsed,
 					$this->getAuthority(),
 					$this,
 				)
@@ -122,46 +122,58 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 
 	/**
 	 * Indicate if the user is allowed the specified action on this URL.
-	 *
-	 * Actions here are limited to 'follow' and 'create'.
 	 */
 	public function isAllowed( $urlAction, $user = null ) {
+		if ( !$this->_isAllowedCache ) {
+			$this->_isAllowedCache = array(
+				'view' => array(),
+				'create' => array(),
+				'edit' => array(),
+				'delete' => array(),
+			);
+		}
 		if ( $user === null ) {
 			$user = RequestContext::getMain()->getUser();
 		}
 		$userId = $user->getId();
 		if ( isset( $this->_isAllowedCache[$urlAction][$userId] ) ) {
-			return $this->_isAllowedCache[$urlAction][$userId] ;
+			return $this->_isAllowedCache[$urlAction][$userId];
 		}
 		if ( !isset( $this->_isAllowedCache[$urlAction] ) ) {
 			// unrecognized action
 			return false;
 		}
 
+		// skip all other tests if this user has a matching 'any' privilege
+		if ( NumericUrlCommon::isAllowed( "$urlAction-any", $user ) ) {
+			$this->_isAllowedCache[$urlAction][$userId] = true;
+			return true;
+		}
+
 		$this->_isAllowedCache[$urlAction][$userId] = false;
-		// user must have at least 'follow-shared'
-		if ( !NumericUrlCommon::isAllowed( 'follow-shared', $user ) ) {
+		// user must have at least 'view-basic'
+		if ( !NumericUrlCommon::isAllowed( 'view-basic', $user ) ) {
 			return false;
 		}
 
-		if ( $urlAction === 'follow' ) {
+		if ( $urlAction === 'view' ) {
 			if ( $this->isBasic() ) {
 				$this->_isAllowedCache[$urlAction][$userId] = true;
 			} else {
-				// user must have at least 'follow-local'
-				if ( !NumericUrlCommon::isAllowed( 'follow-local', $user ) ) {
+				// user must have at least 'view-local'
+				if ( !NumericUrlCommon::isAllowed( 'view-local', $user ) ) {
 					return false;
 				}
 				if ( $this->isLocal() ) {
 					$this->_isAllowedCache[$urlAction][$userId] = true;
-				} elseif ( NumericUrlCommon::isAllowed( 'follow-global', $user ) ) {
+				} elseif ( NumericUrlCommon::isAllowed( 'view-global', $user ) ) {
 					$this->_isAllowedCache[$urlAction][$userId] = true;
 				} else {
 				}
 			}
 		} else {
-			// to grant 'create', user must have 'follow'
-			if ( !$this->isAllowed( 'follow', $user ) ) {
+			// to grant 'create', user must have 'view'
+			if ( !$this->isAllowed( 'view', $user ) ) {
 				return false;
 			}
 		}
@@ -206,32 +218,35 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 
 	/** */
 	public function getAllowedRegions( $user = null ) {
-		if ( $user === null ) {
-			$user = RequestContext::getMain()->getUser();
-		}
-		$userId = $user->getId();
 		if ( !isset( $this->_allowedRegionsCache[$userId] ) ) {
-			$this->_allowedRegionsCache[$userId] = array( 'follow' => array(), 'create' => array() );
+			if ( $this->_allowedRegionsCache === null ) {
+				$this->_allowedRegionsCache = array();
+			}
+			if ( $user === null ) {
+				$user = RequestContext::getMain()->getUser();
+			}
+			$userId = $user->getId();
+			$this->_allowedRegionsCache[$userId] = array( 'view' => array(), 'create' => array() );
 			$basicAllowed = array(
-				'follow' => NumericUrlCommon::isAllowed( 'follow-shared', $user ),
+				'view' => NumericUrlCommon::isAllowed( 'view-shared', $user ),
 			);
-			// A user without follow-shared rights can't have any region rights
-			if ( !$basicAllowed['follow'] ) {
+			// A user without view-shared rights can't have any region rights
+			if ( !$basicAllowed['view'] ) {
 				return $this->_allowedRegionsCache[$userId];
 			}
 			$basicAllowed['create'] = NumericUrlCommon::isAllowed( 'create-basic', $user );
 			$globalAllowed = array(
-				'follow' => NumericUrlCommon::isAllowed( 'follow-global', $user ),
+				'view' => NumericUrlCommon::isAllowed( 'view-global', $user ),
 				'create' => $basicAllowed['create'] && NumericUrlCommon::isAllowed( 'create-global', $user ),
 			);
-			foreach ( array( 'follow', 'create' ) as $perm ) {
+			foreach ( array( 'view', 'create' ) as $perm ) {
 				$this->_allowedRegionsCache[$userId][$perm] = array();
 				foreach ( $this->getRegionsInfo() as $region => $info ) {
 					if ( $basicAllowed[$perm]
 					 && ( $globalAllowed[$perm]
 								|| NumericUrlCommon::isAllowed( "$perm-region-$region", $user  ) )
-					 && ( ( $perm === 'follow' )
-							 || isset( $this->_allowedRegionsCache[$userId]['follow'][$region] ) )
+					 && ( ( $perm === 'view' )
+							 || isset( $this->_allowedRegionsCache[$userId]['view'][$region] ) )
 					) {
 						$this->_allowedRegionsCache[$userId][$perm][$region] = true;
 					}
@@ -399,7 +414,7 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 			$this->_reset();
 			$this->_key = $key;
 		}
-		$now = wfTimestamp( TS_MW );
+		$now = wfTimestamp( TS_MW ); // SQL-safe
 		$db = $this->getDbSlave();
 		$conds = array(
 			'numap_key' => $this->_key,
@@ -467,7 +482,8 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 		$this->_regionsInfo = null;
 		$this->_regionsAllowed = null;
 		$this->_isAbsolute = null;
-		$this->_allowedRegionsCache = array();
+		$this->_allowedRegionsCache = null;
+		$this->_isAllowedCache = null;
 		$this->_isPrivate = null;
 		$this->_key = null;
 		$this->_expiry = null;
@@ -488,18 +504,80 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 			$key = $this->_key;
 		}
 		$vars = array(
+			'numap_id',
 			'numap_link',
-			'numap_timestamp',
-			'numap_creator',
 			'numap_enabled',
+			'numap_creator',
+			'numap_regions_count',
 			'numap_expiry',
 			'numap_embargo',
+			'numap_timestamp',
 			)
 			+ $vars;
 		if ( !isset( $conds['numap_key'] ) ) {
 			$conds['numap_key'] = $key;
 		}
-		return $db->selectRow( self::$_dbTableMap, $vars, $conds, __METHOD__ );
+		$row = $db->selectRow( self::$_dbTableMap, $vars, $conds, __METHOD__ );
+		if ( $row ) {
+			// We could have done an OUTER JOIN to collect all the regions in the above query,
+			// but we expect relatively few mappings with regions, so we only check when we
+			// see that this mapping has regions.
+			$user = RequestContext::getMain()->getUser();
+			$userId = $user->getId();
+			if ( $row->numap_regions_count > 0 ) {
+				$row->numaps_regions = $this->_loadDbRegions( $row->numap_id, $row->numap_regions_count );
+				$matched = false;
+				if ( is_array( $row->numaps_regions ) ) {
+					// Allowed access to *any* of these regions allows access to this map instance
+					foreach ( $row->numaps_regions as $region ) {
+						if ( NumericUrlCommon::isAllowed( "view-region-$region", $user ) ) {
+							$matched = true;
+							break;
+						}
+					}
+				} else {
+					$row->numaps_regions = array();
+				}
+				// this user is not in any of these regions, so discard the mapping
+				if ( ( !$matched ) && ( ) ) {
+				}
+			} else {
+				$row->numaps_regions = array();
+			}
+		}
+		return $row;
+	}
+
+	/**
+	 * Load regions as stored in the DB.
+	 */
+	private function _loadDbRegions( $mapId, $expectedCount = null ) {
+		$vars = array(
+			'nurgn_region',
+		);
+		$conds = array(
+			'nurgn_numap_id' => $mapId,
+		);
+		$rows = array();
+		$res = $db->select( self::_dbTableRegions, $vars, $conds, __METHOD__ );
+		if ( $res ) {
+			foreach ( $res as $row ) {
+				if ( $row->nurgn_region ) {
+					$rows[$row->nurgn_region] => true;
+				}
+			}
+		}
+		if ( ( $expectedCount !== null) && ( count( $rows ) != $expectedCount ) ) {
+			// @todo create maintenance cleanup task to find and fix  miscounts and to
+			// report related security issue. (If we're not properly recording the regions
+			// count, and we incorrectly count zero, we incorrectly allow '*' access.)
+			trigger_error(
+				sprintf('%s: Expected %u regions, but found %u; numap_id=%u; perform cleanup to fix', __METHOD__,
+					$expectedCount, count( $rows )
+				),
+				E_USER_WARNING );
+		}
+		return $rows;
 	}
 
 	/**
@@ -656,7 +734,7 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 	private $_regionsInfo;
 
 	/** */
-	private $_allowedRegionsCache = array();
+	private $_allowedRegionsCache;
 
 	/** */
 	private $_user;
@@ -665,7 +743,7 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 	private $_isPrivate;
 
 	/** */
-	private $_isAllowedCache = array( 'follow' => array(), 'create' => array() );
+	private $_isAllowedCache;
 
 	/** */
 	private $_dbSlave;
@@ -674,7 +752,7 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 	private $_dbMaster;
 
 	/** */
-	private $_key ;
+	private $_key;
 
 	/** */
 	private $_timestamp;
@@ -693,5 +771,8 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 
 	/** */
 	private static $_dbTableMap = 'numericurlmap';
+
+	/** */
+	private static $_dbTableRegions = 'numericurlregions';
 
 }

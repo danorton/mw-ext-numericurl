@@ -61,6 +61,11 @@ if ( !isset( $wgNumericUrl['template'] ) ) {
 	$wgNumericUrl['template'] = null;
 }
 
+// Allow a password in a URL. (e.g. http://user:pass@hostname/path )
+if ( !isset( $wgNumericUrl['allowPasswordInUrl'] ) ) {
+	$wgNumericUrl['allowPasswordInUrl'] = false;
+}
+
 if ( !isset( $wgNumericUrl['longUrl'] ) ) {
 	$wgNumericUrl['longUrl'] = array();
 }
@@ -103,9 +108,9 @@ if ( !isset( $wgNumericUrl['longUrl']['lifespan'] ) ) {
 	$wgNumericUrl['longUrl']['lifespan'] = 60*24*7;       // one week
 }
 
-// true if follow expired URLs not yet purged
-if ( !isset( $wgNumericUrl['followExpired'] ) ) {
-	$wgNumericUrl['followExpired'] = false;
+// true if to view expired URLs not yet purged
+if ( !isset( $wgNumericUrl['viewExpired'] ) ) {
+	$wgNumericUrl['viewExpired'] = false;
 }
 
 // regex of titles to allow for basic URLs
@@ -218,46 +223,23 @@ $wgHooks['LoadExtensionSchemaUpdates'][] = 'NumericUrlCommon::onLoadExtensionSch
 
 // default permissions are last
 
-// 'follow-shared' might as well be true if anonymous redirectors are employed
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-follow-shared'] = true;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-local'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-create-global'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-short'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-medium'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-slashes'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-private'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-relay-query'] = false;
-$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-expire-never'] = false;
+// 'view-shared' might as well be true if anonymous redirectors are employed
+$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . '-view-shared'] = true;
 
-$wgGroupPermissions['user'][MW_EXT_NUMERICURL_NAME_LC . '-follow-shared'] = true;
+$wgGroupPermissions['user'][MW_EXT_NUMERICURL_NAME_LC . '-view-shared'] = true;
 
-$wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . '-follow-shared'] = true;
+$wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . '-view-shared'] = true;
 $wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = true;
 
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-follow-shared'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-basic'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-local'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-global'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-view-any'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-create-any'] = true;
+$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-edit-any'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-short'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-medium'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-slashes'] = true;
-$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-private'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-relay-query'] = true;
 $wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . '-expire-never'] = true;
 
-// set default region permissions: deny default, allow sysop
-$wgNumericUrl['fn'] = function( &$wgNumericUrl, &$wgGroupPermissions ) {
-	foreach ( $wgNumericUrl['regions'] as $region ) {
-		foreach ( array( 'follow', 'create' ) as $perm ) {
-			$wgGroupPermissions['*'][MW_EXT_NUMERICURL_NAME_LC . "-$perm-region-$region"] = false;
-			$wgGroupPermissions['sysop'][MW_EXT_NUMERICURL_NAME_LC . "-$perm-region-$region"] = true;
-		}
-	}
-};
-$wgNumericUrl['fn']($wgNumericUrl, $wgGroupPermissions);
-unset($wgNumericUrl['fn']);
-
-$wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . "-follow-region-iw_local"] = true;
+$wgGroupPermissions['autoconfirmed'][MW_EXT_NUMERICURL_NAME_LC . "-view-region-iw_local"] = true;
 
 /** @}*/

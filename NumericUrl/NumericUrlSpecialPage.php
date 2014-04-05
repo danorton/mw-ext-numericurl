@@ -62,9 +62,10 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
 		parent::__construct(
 			NumericUrlCommon::SPECIAL_PAGE_TITLE,
-			NumericUrlCommon::getFullUserRightsName( 'follow-shared' )
+			NumericUrlCommon::getFullUserRightsName( 'view-basic' )
 		);
 		$this->_mp = parent::getMessagePrefix();
+		$this->_mpActivePage = $this->_mp;
 		$this->_rq = $this->getRequest();
 		$this->_query = $this->_rq->getValues();
 	}
@@ -229,7 +230,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 		);
 
 		if ( !$hasNonBasicCreateRights ) {
-			if ( ( !$this->numericUrlPath ) || ( !NumericUrlCommon::isAllowed( 'follow-shared', $user ) ) ) {
+			if ( ( !$this->numericUrlPath ) || ( !NumericUrlCommon::isAllowed( 'view-basic', $user ) ) ) {
 				// We lack rights to create it or it exists, but we aren't allowed to see it
 				// Simply report that the numeric URL is not available.
 				$fields['unavailable'] = array(
@@ -263,26 +264,21 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	/** For parameters and semantics, see FormSpecialPage::onSuccess(). */
 	public function onSuccess() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
-		var_dump( __METHOD__ ); exit( 3 );
+    echo htmlspecialchars( sprintf( "<br> %s:%u: ***DEBUG EXIT ***<br>\n", __METHOD__, __LINE__ ) ); exit( 3 );
 	}
 
 	/** For parameters and semantics, see SpecialPage::getDescription(). */
 	public function getDescription() {
-		if ( $this->_showToolForm ) {
-			$msgid = $this->getMessagePrefix();
+		if ( $this->_mp !== $this->_mpActivePage ) {
+      return $this->msg( $this->_mpActivePage )->text();
 		} else {
 			return parent::getDescription();
 		}
-		return $this->msg( $msgid )->text();
 	}
 
 	/** */
 	public function getMessagePrefix() {
-		$prefix = $this->_mp;
-		if ( $this->_showToolForm ) {
-			$prefix = "$prefix-toolform";
-		}
-		return $prefix;
+    return $this->_mpActivePage;
 	}
 
 	/** For parameters and semantics, see FormSpecialPage::alterForm(). */
@@ -294,38 +290,27 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	}
 
 	/** */
-	private function _unsetVal( $key ) {
-		return $this->_rq->unsetVal( NumericUrlCommon::$config->queryPrefix . $name );
-	}
-
-	/** */
 	private function _getVal( $name, $default = null ) {
 		return $this->_rq->getVal( NumericUrlCommon::$config->queryPrefix . $name, $default );
 	}
 
 	/** */
+  /*///
 	private function _getTitle() {
 		if ( ( !$this->titleObject ) && $this->_getVal( 'title' ) ) {
 			$this->titleObject = Title::newFromText( $this->_getVal( 'title' ) );
 		}
 		return $this->titleObject;
 	}
+  //*///
 
 	/** */
+  /*///
 	private function _redirect( $out, $url, $status = 307 ) {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
 		$out->redirect( $url, $status );
 	}
-
-	private function _parseTarget() {
-		$curid = $this->_getInt( 'curid' );
-		$title = $this->_getVal( 'title' );
-		$action = $this->_getVal( 'action', 'view' );
-
-		if ( $this->_getCheck( 'search' ) ) {
-			$ret = SpecialPage::getTitleFor( 'Search' );
-		}
-	}
+  //*///
 
 	/**
 	 * Validate tool page request.
@@ -335,8 +320,8 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	private function _isValidToolPageRequest() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
 
+    // an empty query is A-OK
 		if ( !count( $this->_query ) ) {
-			// an empty query is A-OK
 			return true;
 		}
 
@@ -344,7 +329,7 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 
 		// if it's not empty, it must have a url parameter
 		$targetUrl = $this->_getVal( 'url' );
-		if ( $targetUrl === null ) {
+		if ( !$targetUrl ) {
 			// no URL at all
 			return false;
 		}
@@ -355,13 +340,13 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	}
 
 	/**
-	 * Try to get the title that's associated with the the local URL.
+	 * Display the tool page.
 	 */
 	/** */
 	private function _toolPage() {
 		NumericUrlCommon::_debugLog( 20, __METHOD__ );
 
-		$this->_showToolForm = true;
+    $this->_mpActivePage = "{$this->_mp}-toolform";
 
 		$out = $this->getOutput();
 		$out->setRobotPolicy( 'noindex,nofollow' );
@@ -433,11 +418,11 @@ class NumericUrlSpecialPage extends FormSpecialPage {
 	/** i18n message prefix */
 	private $_mp;
 
+	/** i18n message prefix for the active (sub-)page */
+	private $_mpActivePage;
+
 	/** WebRequest */
 	private $_rq;
-
-	/** */
-	private $_showToolForm;
 
 	/** */
 	private $_localTitle;

@@ -46,7 +46,7 @@ class NumericUrlCommon {
 	const URL_CLASS_LOCAL   = 0x0002;
 
 	/** */
-	const URL_CLASS_GROUP   = 0x0004;
+	const URL_CLASS_XXXXX   = 0x0004;
 
 	/** */
 	const URL_CLASS_GLOBAL  = 0x0008;
@@ -93,51 +93,26 @@ class NumericUrlCommon {
 	/** */
 	public static $_debugLogLevel = 0;
 
-	/** */
+	/**
+   * These are the fixed permission names.
+   *
+   * This list does not include region permission names.
+   */
 	public static $userRightsNames = array(
-		'follow-shared' => true,
-		'follow-global' => true,
+		'view-basic' => true,
+		'view-local' => true,
+		'view-global' => true,
+    'view-any' => true,
+
 		'create-basic' => true,
 		'create-local' => true,
 		'create-group' => true,
 		'create-global' => true,
+
 		'create-notrack' => true,
 		'create-password' => true,
 		'create-noexpire' => true,
 	);
-
-
-
-	/** Constructor for class's singleton object.
-	 *
-	 * Throws ErrorException if singleton already created.
-	 */
-	public function __construct() {
-		if ( self::$_self || !self::$_singleton ) {
-			throw new ErrorException( 'Invalid attempt to instantiate static/singleton ' . __CLASS__ . ' class' );
-		}
-	}
-
-	/**
-	 * Get class's singleton object.
-	 *
-	 * @returns     NumericUrlCommon instance.
-	 */
-	public static function singleton() {
-		if ( !self::$_self ) {
-			self::$_singleton = true;
-			self::$_self = new self();
-		}
-		return self::$_self;
-	}
-
-	/** */
-	public static function isUrlBasic( $url ) {
-	}
-
-	/** */
-	public static function isUrlInGroup( $url ) {
-	}
 
 	/** */
 	public static function isAllowed( $userRightsName, $user = null ) {
@@ -176,7 +151,7 @@ class NumericUrlCommon {
 
 	/** */
 	public static function onWebRequestPathInfoRouter( $pathRouter ) {
-		self::_debugLog( 20, __METHOD__ );
+		NUDBG && self::_debugLog( 20, __METHOD__ );
 		if ( self::$config->template ) {
 			$pathRouter->add( self::$config->template,
 				array( 'title' => self::$_specialPageTitle->getPrefixedText() )
@@ -185,19 +160,21 @@ class NumericUrlCommon {
 	}
 
 	/** */
+  //*///
 	public static function onNumericUrlRegionCheck(
 		&$regions,
 		$urlText,
 		$urlParts,
 		$urlAuthority,
-		$urlMapInstance ) {
+		$urlMapInstance
+  ) {
 
 		// don't do anything if iw_local has been removed from the list of regions
 		if ( !isset( self::$config->regions->iw_local ) ) {
 			return true;
 		}
 
-		self::_debugLog( 20,
+		NUDBG && self::_debugLog( 20,
 			sprintf( '%s: url=\"%s\"; authority=\"%s\"', __METHOD__ , $urlText, $urlAuthority ),
 			E_USER_WARNING );
 
@@ -206,8 +183,11 @@ class NumericUrlCommon {
 		}
 		return true;
 	}
+  //*///
 
-	/** */
+	/**
+   * Get the parameters that created the specified URL from the specified template.
+   */
 	public static function reverseUrlTemplate( $urlTemplate, $urlResult ) {
 		static $paramToRegex = array(
 			'%241' => '(?<_1>.*)',
@@ -228,16 +208,11 @@ class NumericUrlCommon {
 	}
 
 	/**
-	 *
-	 */
-	public static function parseUrlForTitle() {
-	}
-
-	/**
 	 * Given a fully qualified URL, determine its scope.
 	 */
+  /*///
 	public static function scopeFromUrl( $urlOrParts ) {
-		self::_debugLog( 20, __METHOD__ );
+		NUDBG && self::_debugLog( 20, __METHOD__ );
 		$urlParts = is_string( $urlOrParts ) ? NumericUrlMapInstance::parse( $url ) : $urlOrParts;
 		if ( $urlParts === false ) {
 			// not a valid url
@@ -257,17 +232,18 @@ class NumericUrlCommon {
 		}
 		return self::URL_SCOPE_BASIC;
 	}
+  //*///
 
 	/**
-	 * Determine whether our tool link belongs on the current page and, if so, construct it.
+	 * Determine whether our tool link belongs on the current page and, if so, construct the link.
 	 */
 	public static function onSkinTemplateToolboxEnd( $tpl ) {
 		$qp = self::$config->queryPrefix;
-		self::_debugLog( 20, __METHOD__ );
+		NUDBG&&self::_debugLog( 20, __METHOD__ );
 
 		$context = $tpl->getSkin()->getContext();
 
-		if ( !self::isAllowed( 'follow-shared', $context->getUser() ) ) {
+		if ( !self::isAllowed( 'view-shared', $context->getUser() ) ) {
 			return;
 		}
 
@@ -275,7 +251,7 @@ class NumericUrlCommon {
 
 		// skip this unless specifically configured for the current action
 		if ( !in_array( $action, self::$toolboxActions ) ) {
-			self::_debugLog( 20, __METHOD__ . ': not configured for specified action' );
+			NUDBG&&self::_debugLog( 20, __METHOD__ . ': not configured for specified action' );
 			return;
 		}
 
@@ -330,7 +306,6 @@ class NumericUrlCommon {
 			}
 		}
 
-		$context->getRequest()->unsetVal( 'title' ); // remove redundant query parameter
 		$urlMapInstance = new NumericUrlMapInstance(
 			$title->getFullUrl(
 				wfArrayToCgi( $context->getRequest()->getValues() ),
@@ -338,6 +313,12 @@ class NumericUrlCommon {
 				PROTO_RELATIVE
 				)
 		);
+    // remove redundant title query param
+    if ( is_array( $urlMapInstance->getQueryValue('title') ) ) {
+      $parsed = $urlMapInstance->getParsed();
+      $parsed['title'] = $parsed['title'][0];
+      $urlMapInstance->setParsed( $parsed );
+    }
 		// see if any hooks want to suppress the toolbox link
 		if ( Hooks::isRegistered( 'NumericUrlToolboxCheck' ) ) {
 			$disable = false;
@@ -363,6 +344,8 @@ class NumericUrlCommon {
 
 		$query[] = "{$qp}url=" . wfUrlencode( $urlMapInstance );
 
+
+    /*///
 		// pass the specific page ID and/or revision, if specified
 		$articleId = $title->getArticleID();
 		if ( $articleId ) {
@@ -414,6 +397,7 @@ class NumericUrlCommon {
 				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
 			);
 		}
+    //*///
 
 		// output the menu item link
 		if ( count( $query ) ) {
@@ -429,22 +413,51 @@ class NumericUrlCommon {
 		}
 	}
 
+  /**
+   * Create/update our DB schema.
+   *
+   * This is invoked by maintenance/update.php
+   */
 	public static function onLoadExtensionSchemaUpdates( DatabaseUpdater $updater ) {
 		self::_debugLog( 10, __METHOD__ );
 		$updater->addExtensionTable( 'numericurlmap', __DIR__ . '/numericurlmap.sql' );
+		$updater->addExtensionTable( 'numericurlregions', __DIR__ . '/numericurlregions.sql' );
 		return true;
 	}
 
+  /**
+   * @todo - move this to a debug class
+   */
+  public static function isDebugLogLevel( $messageLevel ) {
+    return $messageLevel <= self::$_debugLogLevel;
+  }
+  
+  /** */
+  public static function setDebugLogLevel( $newLevel ) {
+    if ( $newLevel === self::$_debugLogLevel ) {
+      // no-op
+      return;
+    }
+    $oldLevel = self::$_debugLogLevel;
+    if ( $newLevel !== null ) {
+      self::_debugLog( 1,
+        sprintf('%s: Logging level changing from %u to %u', __METHOD__, $oldLevel, $newLevel )
+      );
+      self::$_debugLogLevel = $newLevel;
+    }
+    return $oldLevel;
+  }
+ 
 	/** */
-	public static function _debugLog( $debugLevel, $msg ) {
-		global $wgDebugLogGroups;
-
-		// Keep quiet if this message log level is above the current log level
-		if ( $debugLevel > self::$_debugLogLevel ) {
+	public static function _debugLog( $messageLevel, $msg ) {
+    if ( defined( 'NUDBG' ) && !NUDBG ) return;
+		// Keep quiet if this message's log level is above the current log level
+		if ( !self::isDebugLogLevel( $messageLevel ) ) {
 			return;
 		}
-
-		// set our log file if it was not configured
+    
+		global $wgDebugLogGroups;
+		// set and create our log file
 		if ( !array_key_exists( self::$_debugLogGroup, $wgDebugLogGroups ) ) {
 			$logDir = __DIR__ . "/log";
 			if ( !is_writable( $logDir ) ) {
@@ -462,7 +475,9 @@ class NumericUrlCommon {
 
 	}
 
-	/** */
+	/**
+   * 
+   */
 	public static function iwLocalInfoFromUrl( $fullUrl ) {
 		static $iwLocalUrlsCache = array();
 		static $iwLocalPrefixesCache = null;
@@ -492,6 +507,7 @@ class NumericUrlCommon {
 	}
 
 	/** */
+  /*///
 	public static function titleFromLocalUrl( $localUrl ) {
 		$title = null;
 		if ( $localUrl->isLocal() ) {
@@ -529,8 +545,11 @@ class NumericUrlCommon {
 		}
 		return $title;
 	}
+  //*///
 
-	/** */
+	/**
+   * Indicate if the user is allowed *all* of the specified rights.
+   */
 	private static function _isAllowedAll( $userRightsNames, $user ) {
 		foreach( $userRightsNames as $userRightsName ) {
 			if ( !self::isAllowed( $userRightsName, $user ) ) {
@@ -552,10 +571,14 @@ class NumericUrlCommon {
 	 */
 	public static function _initStatic() {
 		global $wgCanonicalNamespaceNames, $wgArticlePath;
-		self::_debugLog( 20, __METHOD__ );
+		NUDBG&&self::_debugLog( 20, __METHOD__ );
 		if ( !self::$config ) {
+    
+      // Get our configuration object
 			global $wgNumericUrl;
 			self::$config = Weirdo::objectFromArray( $wgNumericUrl );
+      
+      // Enumerate all permissions that we support
 
 		  self::$_specialPageTitle = SpecialPage::getTitleFor( self::SPECIAL_PAGE_TITLE );
 
@@ -579,7 +602,7 @@ class NumericUrlCommon {
 						E_USER_WARNING );
 					continue;
 				}
-				self::$userRightsNames["follow-region-$k"] = true;
+				self::$userRightsNames["view-region-$k"] = true;
 				self::$userRightsNames["create-region-$k"] = true;
 			}
 
@@ -608,12 +631,40 @@ class NumericUrlCommon {
 
 	/** */
 	private static $_articlePath;
+  
+  /**
+   * Subset of $wgActions that we support.
+   *
+   * Combine this with a region (below) to get a permission tag.
+   */
+  private static $_actions = array(
+    'create' => 1, // create a mapping
+    'delete' => 1, // n.b. an extremely rare action! (even then, it only sets a flag)
+    'edit'   => 1, // can't change long URL, just various attributes
+    'view'   => 1, // view and/or follow the redirect
+  );
+  
+  /**
+   * URL regions
+   *
+   * These map to permissions, e.g. "numericurl-create-$region"
+   */
+  private static $_regions = array(
+    'basic'  => 1,        // a "basic" page on this wiki (configurable)
+    // 'local-*'  <-- hooked local regions go here
+    'local'  => 1,        // other URLs on this site not in a hooked region
+    // 'global-*' <-- hooked global regions go here
+    'global' => 1, // other URLs anywhere else not in a hooked region
+    'any'    => 1,          // grants permission to any URL
+  );
 
 }
 // Once-only static initialization
 NumericUrlCommon::_initStatic();
 
 // Uncomment the next line to enable debug logging
-NumericUrlCommon::$_debugLogLevel = 99;
+NumericUrlCommon::setDebugLogLevel( 99 );
 
+// Uncomment the next line if using NUDBG
+define('NUDBG', NumericUrlCommon::$_debugLogLevel );
 /** @}*/
