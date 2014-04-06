@@ -114,13 +114,20 @@ class NumericUrlCommon {
 		'create-noexpire' => true,
 	);
 
+  /** */
+  public static function getCurrentUser() {
+    return self::$_currentUser;
+  }
+  
+  /** */
+  public static function getCurrentUserId() {
+    return self::$_currentUserId;
+  }
+  
 	/** */
 	public static function isAllowed( $userRightsName, $user = null ) {
 		if ( $user === null ) {
-			if ( self::$_defaultUser === null ) {
-				self::$_defaultUser = RequestContext::getMain()->getUser();
-			}
-			$user = self::$_defaultUser;
+			$user = self::$_currentUser;
 		}
 		if ( is_array( $userRightsName ) ) {
 			return self::_isAllowedAll( $userRightsName, $user );
@@ -235,182 +242,66 @@ class NumericUrlCommon {
   //*///
 
 	/**
-	 * Determine whether our tool link belongs on the current page and, if so, construct the link.
+	 * Determine whether our tool link belongs on the current page and, if so, output the link.
 	 */
 	public static function onSkinTemplateToolboxEnd( $tpl ) {
 		$qp = self::$config->queryPrefix;
 		NUDBG&&self::_debugLog( 20, __METHOD__ );
 
 		$context = $tpl->getSkin()->getContext();
+		$title = $context->getTitle();
 
-		if ( !self::isAllowed( 'view-shared', $context->getUser() ) ) {
-			return;
-		}
-
-		$action = Action::getActionName( $context );
-
-		// skip this unless specifically configured for the current action
-		if ( !in_array( $action, self::$toolboxActions ) ) {
-			NUDBG&&self::_debugLog( 20, __METHOD__ . ': not configured for specified action' );
-			return;
-		}
-
-		// skip this on error pages
-		$out = $context->getOutput();
-		$okStatus = ( ( $out->mStatusCode == '' ) || ( ( $out->mStatusCode / 100 ) == 2 ) );
-		if ( !$okStatus ) {
+    // rule out pages that might be valid mappings, but we don't display the tool link for them
+		// skip this on error pages (which might not have always produced an error)
+		$outStatus = $context->getOutput()->mStatusCode;
+		if ( ( $outStatus !== '' ) && ( ( $outStatus / 100 ) != 2 ) ) {
 			self::_debugLog( 20, __METHOD__ . ': not displayed for error pages' );
 			return;
 		}
+ 
+    // skip if the mainpage (this is a redirector configuration parameter)
+    if ( $title->isMainPage() ) {
+			self::_debugLog( 20, __METHOD__ . ': not displayed for mainpage' );
+      return;
+    }
 
-		$title = $context->getTitle();
-
-		// bugbug TODO - don't allow on main page
-		// bugbug TODO - check $title->isDeleted[Quick]() ??
-		// bugbug TODO - check $title->isRedirect()
-		// bugbug TODO - if isSpecialPage(), invoke fixSpecialName()
-
-		// skip if this is our own special page
-		if ( $title->isSpecial( self::SPECIAL_PAGE_TITLE ) ) {
-			self::_debugLog( 20, __METHOD__ . ': not displayed for our own pages' );
-			return;
-		}
-
-		// skip if the page isn't known (e.g. redlink)
-		if ( !$title->isKnown() ) {
-			self::_debugLog( 20, __METHOD__ . ': not displayed for unknown pages' );
-			return;
-		}
-
-		// skip if a redirect page
+    // Skip for redirect pages (might not always have been a redirect)
 		if ( $title->isRedirect() ) {
 			self::_debugLog( 20, __METHOD__ . ': not displayed for redirect pages' );
 			return;
 		}
 
-		// pass the current query parameters to the tool, if invoked
-		$query = array();
-
-		// see if the configuration regexes rule out this title
-		$urlTitle = (string)$title->getPrefixedUrl();
-		if ( self::$config->reTitlesWithToolLink ) {
-			if ( !preg_match( self::$config->reTitlesWithToolLink, $urlTitle ) ) {
-				self::_debugLog( 20, __METHOD__ . ': did not match reTitlesWithToolLink' );
-				return;
-			}
-		}
-		if ( self::$config->reTitlesWithoutToolLink ) {
-			if ( preg_match( self::$config->reTitlesWithoutToolLink, $urlTitle ) ) {
-				self::_debugLog( 20, __METHOD__ . ': matched reTitlesWithoutToolLink' );
-				return;
-			}
-		}
-
-		$urlMapInstance = new NumericUrlMapInstance(
-			$title->getFullUrl(
-				wfArrayToCgi( $context->getRequest()->getValues() ),
-				false,
-				PROTO_RELATIVE
-				)
-		);
-    // remove redundant title query param
-    if ( is_array( $urlMapInstance->getQueryValue('title') ) ) {
-      $parsed = $urlMapInstance->getParsed();
-      $parsed['title'] = $parsed['title'][0];
-      $urlMapInstance->setParsed( $parsed );
+		$urlMapInstance = newFromTitle( $title );
+ 
+    // skip if the current user isn't allowed to view a map to this page
+    if ( !$urlMapInstance->isAllowed( 'view', $user ) ) {
+      return;
     }
-		// see if any hooks want to suppress the toolbox link
-		if ( Hooks::isRegistered( 'NumericUrlToolboxCheck' ) ) {
-			$disable = false;
-			wfRunHooks(
-				'NumericUrlToolboxCheck',
-				array(
-					&$disable,
-					$title,
-					$urlMapInstance,
-				)
-			);
 
-			self::_debugLog( 30,
-				sprintf( '%s():%u: url=%s; regions=(%s)', __METHOD__, __LINE__,
-					wfUrlencode( $urlMapInstance ),
-					implode( ',', array_keys( $urlMapInstance->getRegions() ) )
-					)
-			);
-			if ( $disable ) {
-				return;
-			}
-		}
-
-		$query[] = "{$qp}url=" . wfUrlencode( $urlMapInstance );
-
-
-    /*///
-		// pass the specific page ID and/or revision, if specified
-		$articleId = $title->getArticleID();
-		if ( $articleId ) {
-			$query[] = "{$qp}pageid=$articleId";
-			self::_debugLog( 30,
-				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
-			);
-			// oldid is for persistent URLs to specific revisions of pages
-			$oldid = Article::newFromID( $articleId )->getOldID();
-			if ( $oldid ) {
-				// bail if we don't display the toolbox link for revision pages
-				if ( !self::$config->revisionToolLink ) {
-					self::_debugLog( 20, __METHOD__ . ': not configured for display on specific revisions' );
-					return;
-				}
-				$query[] = "{$qp}oldid=$oldid";
-				self::_debugLog( 30,
-					sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
-				);
-			} else {
-				// curid is for persistent URLs to latest revisions of pages before
-				// they were moved (renamed)
-				$curid = $context->getRequest()->getInt( 'curid' );
-				if ( $curid ) {
-					// bail if we don't display the toolbox link for current-revision page-ID pages
-					if ( !self::$config->pageIdToolLink ) {
-						self::_debugLog( 20, __METHOD__ . ': not configured for display on page-ID pages' );
-						return;
-					}
-					$query[] = "${qp}curid=$curid";
-					$sendTitle = true;
-					self::_debugLog( 30,
-						sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
-					);
-				}
-			}
-			if ( $urlTitle ) {
-				$query[] = "{$qp}title=" . wfUrlencode( $urlTitle );
-				self::_debugLog( 30,
-					sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
-				);
-			}
-		}
-
-		// pass the action if it's not "view"
-		if ( $action !== 'view' ) {
-			$query[] = "{$qp}action=$action";
-			self::_debugLog( 30,
-				sprintf( '%s():%u: query=%s', __METHOD__, __LINE__, implode( '&', $query ) )
-			);
-		}
-    //*///
+		// check if any hooks want to suppress the toolbox link here
+    $disable = false;
+    wfRunHooks(
+      'NumericUrlToolboxCheck',
+      array(
+        &$disable,
+        $title,
+        $urlMapInstance,
+      )
+    );
+    if ( $disable ) {
+      return;
+    }
 
 		// output the menu item link
-		if ( count( $query ) ) {
-			echo Html::rawElement( 'li', array( 'id' => 't-numericurl' ),
-				Html::Element( 'a',
-					array(
-						'href' => self::$_path . '?' . implode( '&', $query ),
-						'title' => wfMessage( 'numericurl-toolbox-title' )->text(),
-						),
-					wfMessage( 'numericurl-toolbox-text' )->text()
-				)
-			);
-		}
+    echo Html::rawElement( 'li', array( 'id' => 't-numericurl' ),
+      Html::Element( 'a',
+        array(
+          'href' => wfAppendQuery( self::$_path, "{$qp}url=" . wfUrlencode( $urlMapInstance ) ),
+          'title' => wfMessage( 'numericurl-toolbox-title' )->text(),
+          ),
+        wfMessage( 'numericurl-toolbox-text' )->text()
+      )
+    );
 	}
 
   /**
@@ -578,8 +469,10 @@ class NumericUrlCommon {
 			global $wgNumericUrl;
 			self::$config = Weirdo::objectFromArray( $wgNumericUrl );
       
+      self::$_currentUser = RequestContext::getMain()->getUser();
+      self::$_currentUserId = self::$_currentUser->getId();
+      
       // Enumerate all permissions that we support
-
 		  self::$_specialPageTitle = SpecialPage::getTitleFor( self::SPECIAL_PAGE_TITLE );
 
 			$titleText = "{$wgCanonicalNamespaceNames[NS_SPECIAL]}:" .
@@ -620,9 +513,6 @@ class NumericUrlCommon {
 	/** */
 	private static $_debugLogGroup;
 
-	/** */
-	private static $_defaultUser;
-
 	/** Singleton object to this (otherwise static) class */
 	private static $_self;
 
@@ -657,6 +547,9 @@ class NumericUrlCommon {
     'global' => 1, // other URLs anywhere else not in a hooked region
     'any'    => 1,          // grants permission to any URL
   );
+  
+  /** */
+  private static $_currentUser;
 
 }
 // Once-only static initialization

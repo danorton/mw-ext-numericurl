@@ -123,19 +123,14 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 	/**
 	 * Indicate if the user is allowed the specified action on this URL.
 	 */
-	public function isAllowed( $urlAction, $user = null ) {
+	public function isActionAllowed( $urlAction, $user = null ) {
 		if ( !$this->_isAllowedCache ) {
-			$this->_isAllowedCache = array(
-				'view' => array(),
-				'create' => array(),
-				'edit' => array(),
-				'delete' => array(),
-			);
+			$this->_isAllowedCache = self::$_actions;
 		}
 		if ( $user === null ) {
-			$user = RequestContext::getMain()->getUser();
+			$user = NumericUrlCommon::getCurrentUser();
 		}
-		$userId = $user->getId();
+    $userId = $user->getId();
 		if ( isset( $this->_isAllowedCache[$urlAction][$userId] ) ) {
 			return $this->_isAllowedCache[$urlAction][$userId];
 		}
@@ -150,38 +145,69 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 			return true;
 		}
 
-		$this->_isAllowedCache[$urlAction][$userId] = false;
-		// user must have at least 'view-basic'
-		if ( !NumericUrlCommon::isAllowed( 'view-basic', $user ) ) {
+    // The user must have increasing built-in privileges including the matching privilege.
+    // Also, any action of a region pre-requires the 'view' action of the same region.
+ 
+    // start with 'basic'
+    $region = 'basic';
+ 
+		// must have at least 'view-basic'
+		if ( !NumericUrlCommon::isAllowed( "view-$region", $user ) ) {
+      $this->_isAllowedCache['view'][$userId] = false;
+      $this->_isAllowedCache[$urlAction][$userId] = false;
 			return false;
 		}
-
-		if ( $urlAction === 'view' ) {
-			if ( $this->isBasic() ) {
-				$this->_isAllowedCache[$urlAction][$userId] = true;
-			} else {
-				// user must have at least 'view-local'
-				if ( !NumericUrlCommon::isAllowed( 'view-local', $user ) ) {
-					return false;
-				}
-				if ( $this->isLocal() ) {
-					$this->_isAllowedCache[$urlAction][$userId] = true;
-				} elseif ( NumericUrlCommon::isAllowed( 'view-global', $user ) ) {
-					$this->_isAllowedCache[$urlAction][$userId] = true;
-				} else {
-				}
-			}
-		} else {
-			// to grant 'create', user must have 'view'
-			if ( !$this->isAllowed( 'view', $user ) ) {
-				return false;
-			}
-		}
-
+ 
+    // is this a basic URL?
+    if ( $this->_isRegion( $region ) ) {
+      $this->_isAllowedCache['view'][$userId] = true;
+      if ( $action === 'view' ) {
+        return true;
+      }
+      $this->_isAllowedCache[$urlAction][$userId] =
+        NumericUrlCommon::isAllowed( "$action-$region", $user );
+      return $this->_isAllowedCache[$urlAction][$userId];
+    }
+    
+    
+    // check hooks for other local regions
+    foreach ( $this->_getRegions( 'local' ) as $localRegion ) {
+      $region = "local-$localRegion";
+      ...
+    }
+    
+    // is this a local URL?
+    $region = 'local'
+    ...
+    
+    // check hooks for global regions
+    foreach ( $this->_getRegions( 'global' ) as $globalRegion ) {
+      $region = "global-$globalRegion";
+      ...
+    }
+    
+    // everything else is a global URL
+    $region = 'global'
+    ...
+ 
 		return true;
 	}
-
+  
 	/** */
+  public function cloneLocalPart() {
+    $parsed = $this->getParsed();
+    $localPart = clone $this;
+    unset( $parsed['scheme'] );
+    unset( $parsed['user'] );
+    unset( $parsed['pass'] );
+    unset( $parsed['host'] );
+    unset( $parsed['port'] );
+    $localPart->setParsed( $parsed );
+    return $localPart;
+  }
+ 
+	/** */
+  /*///
 	public function getRegionsInfo() {
 		if ( $this->_regionsInfo === null ) {
 			$this->_regionsInfo = array();
@@ -215,8 +241,10 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 		}
 		return $this->_regionsInfo;
 	}
+  //*///
 
 	/** */
+  /*///
 	public function getAllowedRegions( $user = null ) {
 		if ( !isset( $this->_allowedRegionsCache[$userId] ) ) {
 			if ( $this->_allowedRegionsCache === null ) {
@@ -255,6 +283,7 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 		}
 		return $this->_allowedRegionsCache[$userId];
 	}
+  //*///
 
 	/** */
 	public function isLocal() {
@@ -539,7 +568,7 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 					$row->numaps_regions = array();
 				}
 				// this user is not in any of these regions, so discard the mapping
-				if ( ( !$matched ) && ( ) ) {
+				if ( ( !$matched ) && ( 1 ) ) {
 				}
 			} else {
 				$row->numaps_regions = array();
@@ -548,6 +577,37 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 		return $row;
 	}
 
+  /**
+   * @todo - maintenance task to remap DB regions from hooks
+   */
+  private function _getRegions( $scope ) {
+    if ( isset( $this->_regions[$scope] ) ) {
+      return $this->_regions[$scope];
+    }
+ 
+    $hookedRegions = array();
+    wfRunHooks( 'NumericUrlRegion' . ucfirst( $scope ),
+      array(
+        &$hookedRegions,
+        $this->cloneLocalPart(),
+      )
+    );
+ 
+    $this->_regions[$scope] = array();
+    foreach ( array_keys( $hookedRegions ) as $region ) {
+      // valid names must start with a letter and have remaining alphanumeric or underscore characters
+		  if ( preg_match( '/^[a-z][a-z0-9_]*$/', $region ) ) {
+        $this->_regions[$scope][] = $region;
+      } else {
+        trigger_error(
+          sprintf('%s: Ignoring invalid %s scope region name: "%s"', __METHOD__, $scope, $region )
+          E_USER_WARNING);
+      }
+    }
+    
+    return $this->_regions['scope'];
+  }
+ 
 	/**
 	 * Load regions as stored in the DB.
 	 */
@@ -563,7 +623,7 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 		if ( $res ) {
 			foreach ( $res as $row ) {
 				if ( $row->nurgn_region ) {
-					$rows[$row->nurgn_region] => true;
+					$rows[$row->nurgn_region] = true;
 				}
 			}
 		}
@@ -775,4 +835,30 @@ class NumericUrlMapInstance extends NumericUrlBasicUrl {
 	/** */
 	private static $_dbTableRegions = 'numericurlregions';
 
+  /**
+   * Subset of $wgActions that we support.
+   *
+   * Combine these names with a region (below) to get a permission tag.
+   */
+  private static $_actions = array(
+    'create' => array(),  // create a mapping
+    'delete' => array(),  // n.b. an extremely rare action! (even then, it only sets a flag)
+    'edit'   => array(),  // can't change long URL, just various attributes
+    'view'   => array(),  // view and/or follow the redirect
+  );
+  
+  /**
+   * URL regions
+   *
+   * These map to permissions, e.g. "numericurl-create-$region"
+   */
+  private static $_builtInRegions = array(
+    'basic'  => 1,        // a "basic" page on this wiki (configurable)
+    // 'local-*'  <-- hooked local regions go here
+    'local'  => 1,        // other URLs on this site not in a hooked region
+    // 'global-*' <-- hooked global regions go here
+    'global' => 1, // other URLs anywhere else not in a hooked region
+    'any'    => 1,          // grants permission to any URL
+  );
+  
 }
