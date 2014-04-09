@@ -35,7 +35,7 @@ class NumericUrlBasicUrl extends WeirdoUrl {
 	/**
 	 * Don't allow changing queryInputSeparators.
 	 *
-	 * In MW it's hardcoded as '&'.
+	 * In MW it"s hardcoded as "&".
 	 */
 	public function setQueryInputSeparators( $queryInputSeparators ) {
 		throw new MWException( sprintf( '%s: this method is not available', __METHOD__ ) );
@@ -58,7 +58,7 @@ class NumericUrlBasicUrl extends WeirdoUrl {
 
 	/** */
 	public function getTitle() {
-		if ( !$this->_title ) {
+		if ( $this->_title === null ) {
 			$this->_title = false;
 			if ( $this->isLocal() ) {
 				$id = $this->getQueryValue( 'oldid' );
@@ -88,7 +88,7 @@ class NumericUrlBasicUrl extends WeirdoUrl {
 					if ( $titleText ) {
 						$this->_title = Title::newFromText( $titleText );
 						if ( $this->_title && !$this->_title->isKnown() ) {
-							$this->_title = null;
+							$this->_title = false;
 						}
 					}
 				}

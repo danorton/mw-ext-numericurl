@@ -274,7 +274,7 @@ class NumericUrlCommon {
 		$urlMapInstance = newFromTitle( $title );
  
     // skip if the current user isn't allowed to view a map to this page
-    if ( !$urlMapInstance->isAllowed( 'view', $user ) ) {
+    if ( !$urlMapInstance->isAllowed( 'view' ) ) {
       return;
     }
 
